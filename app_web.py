@@ -85,8 +85,9 @@ if st.button("⚖️ GENERAR EQUIPOS", type="primary", use_container_width=True)
                 "amigo": amigo_val
             })
 
-        # --- INICIO DEL ALGORITMO IDÉNTICO AL ANTERIOR ---
-        procesados = set(); grupos = []
+       # --- INICIO DEL ALGORITMO ---
+        procesados = set()
+        grupos = []
         for j in convocados:
             if j["nombre"] in procesados: continue
             g = [j]; procesados.add(j["nombre"])
@@ -100,22 +101,48 @@ if st.button("⚖️ GENERAR EQUIPOS", type="primary", use_container_width=True)
         eq1, eq2 = [], []
         arqs = [j for j in convocados if j["posicion"] == "ARQ"]
         
-        # Regla de compensación de 1 solo arquero
+        # 1. Separamos los grupos con arqueros de los grupos sin arqueros
+        grupos_con_arq = [g for g in grupos if any(x["posicion"] == "ARQ" for x in g)]
+        grupos_sin_arq = [g for g in grupos if not any(x["posicion"] == "ARQ" for x in g)]
+        
+        # REGLA 1: Solo 1 Arquero (Compensación con Defensor)
         if len(arqs) == 1:
             st.info("ℹ️ Se detectó 1 solo Arquero. El mejor Defensor va al equipo contrario.")
-            g_arq = next(g for g in grupos if any(x["posicion"]=="ARQ" for x in g))
-            eq1.extend(g_arq); grupos.remove(g_arq)
-            sin_arq = [g for g in grupos if not any(x["posicion"]=="ARQ" for x in g)]
-            if sin_arq:
-                m_def_g = max(sin_arq, key=lambda g: max((x["valoracion"] for x in g if x["posicion"]=="DEF"), default=-1))
-                eq2.extend(m_def_g); grupos.remove(m_def_g)
+            eq1.extend(grupos_con_arq[0])
+            if grupos_sin_arq:
+                m_def_g = max(grupos_sin_arq, key=lambda g: max((x["valoracion"] for x in g if x["posicion"]=="DEF"), default=-1))
+                eq2.extend(m_def_g)
+                grupos_sin_arq.remove(m_def_g)
+            grupos_restantes = grupos_sin_arq
+            
+        # REGLA 2: Exactamente 2 Arqueros (Reparto Equitativo Obligatorio)
+        elif len(arqs) == 2:
+            st.info("ℹ️ Se detectaron 2 Arqueros. Se asignará uno a cada equipo.")
+            if len(grupos_con_arq) >= 2:
+                # Mandamos obligatoriamente un arquero a cada equipo
+                eq1.extend(grupos_con_arq[0])
+                eq2.extend(grupos_con_arq[1])
+                grupos_restantes = grupos_sin_arq
+            else:
+                # Caso extremo: los dos arqueros se marcaron como "amigos" entre sí. Van juntos.
+                eq1.extend(grupos_con_arq[0])
+                grupos_restantes = grupos_sin_arq
+                
+        # REGLA 3: Cero Arqueros
+        else:
+            grupos_restantes = grupos_sin_arq + grupos_con_arq
 
-        grupos.sort(key=lambda g: sum(x["valoracion"] for x in g), reverse=True)
-        for g in grupos:
+        # Repartimos el resto de los grupos para nivelar los promedios
+        grupos_restantes.sort(key=lambda g: sum(x["valoracion"] for x in g), reverse=True)
+        
+        for g in grupos_restantes:
+            # Validamos que el equipo no se pase de 8 integrantes
             if len(eq1) + len(g) <= 8 and (sum(x["valoracion"] for x in eq1) <= sum(x["valoracion"] for x in eq2) or len(eq2) == 8):
                 eq1.extend(g)
-            else: eq2.extend(g)
+            else: 
+                eq2.extend(g)
 
+        # Ordenamos visualmente: ARQ, DEF, MED, DEL
         prioridad = {"ARQ": 0, "DEF": 1, "MED": 2, "DEL": 3}
         eq1.sort(key=lambda x: prioridad.get(x["posicion"], 4))
         eq2.sort(key=lambda x: prioridad.get(x["posicion"], 4))

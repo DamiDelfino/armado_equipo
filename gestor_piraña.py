@@ -31,7 +31,7 @@ def inicializar_db():
             ("Tucu", "DEF", 82,""), ("Fabi", "DEF", 81,""), ("Ale", "MED", 71,""),
             ("Dami", "DEF", 79,""), ("Martn", "MED", 84,""), ("Cesar", "MED", 79,""),
             ("Giorgio", "MED", 81,""), ("Santiago", "DEL", 84,""), ("Toro", "ARQ", 80,""),
-            ("Pipino", "MED", 81,""), ("Pablito", "MED", 82,""), ("CHAPA", "MED", 80,""),
+            ("Pipino", "MED", 81,""), ("Pablito", "MED", 82,""), ("Chapa", "MED", 80,""),
             ("Rodri", "DEL", 79,""), ("Pasteles", "DEL", 78,""), ("Tojo", "DEF", 77,""),
             ("Pitu", "DEF", 78,""), ("Gusti", "MED", 75,""), ("Lucho", "DEL", 70,""),
             ("Chizzo", "DEL", 60,""), ("Facu Amorena", "DEL", 73,""), ("Edgar", "DEF", 80,""),

@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
+import plotly.graph_objects as go # <-- Acá está la nueva librería para la cancha
 
 # ==========================================
 # 1. GESTIÓN DE BASE DE DATOS
@@ -9,18 +10,62 @@ def conectar_db():
     return sqlite3.connect("futbol_plantel.db")
 
 # ==========================================
-# 2. CONFIGURACIÓN DE LA PÁGINA WEB
+# 2. FUNCIONES DE DIBUJO (PLOTLY)
 # ==========================================
-# Esto configura la pestaña del navegador
-st.set_page_config(page_title="Fútbol 8 App", page_icon="⚽", layout="centered")
+def dibujar_cancha(equipo, titulo, color_puntos):
+    posiciones_orden = ["ARQ", "DEF", "MED", "DEL"]
+    coords_x = []
+    coords_y = []
+    nombres = []
+
+    alturas = {"ARQ": 10, "DEF": 35, "MED": 65, "DEL": 90}
+
+    for pos in posiciones_orden:
+        jugadores_en_pos = [j for j in equipo if j["posicion"] == pos]
+        n = len(jugadores_en_pos)
+        for i, j in enumerate(jugadores_en_pos):
+            x_pos = (i + 1) * (100 / (n + 1))
+            coords_x.append(x_pos)
+            coords_y.append(alturas[pos])
+            nombres.append(f"{j['nombre']}<br>({j['valoracion']})")
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=coords_x, y=coords_y,
+        mode='markers+text',
+        text=nombres,
+        textposition="top center",
+        marker=dict(size=25, color=color_puntos, line=dict(width=2, color='white')),
+        textfont=dict(color='white', size=12)
+    ))
+
+    fig.update_layout(
+        title=dict(text=titulo, font=dict(color='white', size=18), x=0.5),
+        width=350, height=450,
+        margin=dict(l=10, r=10, t=50, b=10),
+        xaxis=dict(range=[0, 100], showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(range=[0, 110], showgrid=False, zeroline=False, showticklabels=False),
+        plot_bgcolor="#234721", 
+        paper_bgcolor="#1e1e1e", 
+    )
+
+    fig.add_shape(type="rect", x0=20, y0=0, x1=80, y1=15, line=dict(color="white")) 
+    fig.add_shape(type="circle", x0=40, y0=95, x1=60, y1=105, line=dict(color="white")) 
+    
+    return fig
+
+# ==========================================
+# 3. CONFIGURACIÓN DE LA PÁGINA WEB
+# ==========================================
+st.set_page_config(page_title="Fútbol 8 App", page_icon="⚽", layout="wide")
 
 st.title("⚽ Armador de Equipos Equitativos")
 st.markdown("Seleccioná a los 16 jugadores que vinieron hoy y el sistema armará los equipos.")
 
 # ==========================================
-# 3. FORMULARIO PARA AGREGAR JUGADORES
+# 4. FORMULARIO PARA AGREGAR JUGADORES
 # ==========================================
-# Usamos un "expander" (un acordeón que se despliega) para no ocupar tanta pantalla
 with st.expander("➕ Agregar nuevo jugador a la base de datos"):
     with st.form("form_nuevo"):
         c1, c2, c3, c4 = st.columns(4)
@@ -37,20 +82,17 @@ with st.expander("➕ Agregar nuevo jugador a la base de datos"):
             conn.commit()
             conn.close()
             st.success("¡Jugador guardado! Recargá la página para verlo.")
-            st.rerun() # Esto refresca la página automáticamente
+            st.rerun()
 
 # ==========================================
-# 4. TABLA INTERACTIVA (SELECCIÓN)
+# 5. TABLA INTERACTIVA (SELECCIÓN)
 # ==========================================
 conn = conectar_db()
-# Pandas lee la base de datos y la convierte en una tabla fácil de usar
 df = pd.read_sql("SELECT nombre, posicion, valoracion, amigo FROM jugadores ORDER BY nombre COLLATE NOCASE ASC", conn)
 conn.close()
 
-# Le agregamos una columna falsa al principio con valor False (cajas destildadas)
 df.insert(0, "Juega Hoy", False)
 
-# Mostramos la tabla interactiva en la web
 st.subheader("Plantel Disponible")
 tabla_editada = st.data_editor(
     df,
@@ -58,23 +100,21 @@ tabla_editada = st.data_editor(
         "Juega Hoy": st.column_config.CheckboxColumn("¿Juega Hoy?", default=False),
         "valoracion": st.column_config.ProgressColumn("Nivel", min_value=0, max_value=99, format="%d")
     },
-    disabled=["nombre", "posicion", "valoracion", "amigo"], # Bloqueamos para que solo puedan tildar
+    disabled=["nombre", "posicion", "valoracion", "amigo"], 
     hide_index=True,
     use_container_width=True
 )
 
-# Filtramos solo los que el usuario tildó
 seleccionados_df = tabla_editada[tabla_editada["Juega Hoy"] == True]
 
 # ==========================================
-# 5. ALGORITMO Y RESULTADOS
+# 6. ALGORITMO Y RESULTADOS
 # ==========================================
 if st.button("⚖️ GENERAR EQUIPOS", type="primary", use_container_width=True):
     
     if len(seleccionados_df) != 16:
         st.error(f"⚠️ Tenés que seleccionar exactamente 16 jugadores. Tildaste: {len(seleccionados_df)}")
     else:
-        # Convertimos la tabla de pandas de nuevo a nuestra lista de diccionarios
         convocados = []
         for index, row in seleccionados_df.iterrows():
             amigo_val = str(row["amigo"]) if pd.notna(row["amigo"]) and str(row["amigo"]) != "" else ""
@@ -85,7 +125,6 @@ if st.button("⚖️ GENERAR EQUIPOS", type="primary", use_container_width=True)
                 "amigo": amigo_val
             })
 
-       # --- INICIO DEL ALGORITMO ---
         procesados = set()
         grupos = []
         for j in convocados:
@@ -101,11 +140,9 @@ if st.button("⚖️ GENERAR EQUIPOS", type="primary", use_container_width=True)
         eq1, eq2 = [], []
         arqs = [j for j in convocados if j["posicion"] == "ARQ"]
         
-        # 1. Separamos los grupos con arqueros de los grupos sin arqueros
         grupos_con_arq = [g for g in grupos if any(x["posicion"] == "ARQ" for x in g)]
         grupos_sin_arq = [g for g in grupos if not any(x["posicion"] == "ARQ" for x in g)]
         
-        # REGLA 1: Solo 1 Arquero (Compensación con Defensor)
         if len(arqs) == 1:
             st.info("ℹ️ Se detectó 1 solo Arquero. El mejor Defensor va al equipo contrario.")
             eq1.extend(grupos_con_arq[0])
@@ -115,53 +152,53 @@ if st.button("⚖️ GENERAR EQUIPOS", type="primary", use_container_width=True)
                 grupos_sin_arq.remove(m_def_g)
             grupos_restantes = grupos_sin_arq
             
-        # REGLA 2: Exactamente 2 Arqueros (Reparto Equitativo Obligatorio)
         elif len(arqs) == 2:
             st.info("ℹ️ Se detectaron 2 Arqueros. Se asignará uno a cada equipo.")
             if len(grupos_con_arq) >= 2:
-                # Mandamos obligatoriamente un arquero a cada equipo
                 eq1.extend(grupos_con_arq[0])
                 eq2.extend(grupos_con_arq[1])
                 grupos_restantes = grupos_sin_arq
             else:
-                # Caso extremo: los dos arqueros se marcaron como "amigos" entre sí. Van juntos.
                 eq1.extend(grupos_con_arq[0])
                 grupos_restantes = grupos_sin_arq
                 
-        # REGLA 3: Cero Arqueros
         else:
             grupos_restantes = grupos_sin_arq + grupos_con_arq
 
-        # Repartimos el resto de los grupos para nivelar los promedios
         grupos_restantes.sort(key=lambda g: sum(x["valoracion"] for x in g), reverse=True)
         
         for g in grupos_restantes:
-            # Validamos que el equipo no se pase de 8 integrantes
             if len(eq1) + len(g) <= 8 and (sum(x["valoracion"] for x in eq1) <= sum(x["valoracion"] for x in eq2) or len(eq2) == 8):
                 eq1.extend(g)
             else: 
                 eq2.extend(g)
 
-        # Ordenamos visualmente: ARQ, DEF, MED, DEL
         prioridad = {"ARQ": 0, "DEF": 1, "MED": 2, "DEL": 3}
         eq1.sort(key=lambda x: prioridad.get(x["posicion"], 4))
         eq2.sort(key=lambda x: prioridad.get(x["posicion"], 4))
-        # --- FIN DEL ALGORITMO ---
 
-        # Mostrar los resultados en dos columnas (Ideal para web/celular)
-        st.divider() # Línea separadora
+        # --- DIBUJADO DE LA CANCHA Y RESULTADOS ---
+        st.divider()
         col1, col2 = st.columns(2)
         
         with col1:
-            prom1 = sum(x["valoracion"] for x in eq1)/8
-            st.success(f"🔵 EQUIPO 1 (Prom: {prom1:.2f})")
-            for j in eq1:
-                amigo_txt = f" *(con {j['amigo']})*" if j['amigo'] else ""
-                st.markdown(f"**{j['posicion']}** | {j['nombre']} ({j['valoracion']}){amigo_txt}")
+            prom1 = sum(x["valoracion"] for x in eq1)/8 if len(eq1) == 8 else 0
+            st.success(f"🔵 EQUIPO 1")
+            fig1 = dibujar_cancha(eq1, f"Promedio: {prom1:.2f}", "#3498db")
+            st.plotly_chart(fig1, use_container_width=True)
+            
+            with st.expander("Ver lista de jugadores"):
+                for j in eq1:
+                    amigo_txt = f" *(con {j['amigo']})*" if j['amigo'] else ""
+                    st.caption(f"**{j['posicion']}** | {j['nombre']} {amigo_txt}")
 
         with col2:
-            prom2 = sum(x["valoracion"] for x in eq2)/8
-            st.warning(f"🟠 EQUIPO 2 (Prom: {prom2:.2f})")
-            for j in eq2:
-                amigo_txt = f" *(con {j['amigo']})*" if j['amigo'] else ""
-                st.markdown(f"**{j['posicion']}** | {j['nombre']} ({j['valoracion']}){amigo_txt}")
+            prom2 = sum(x["valoracion"] for x in eq2)/8 if len(eq2) == 8 else 0
+            st.warning(f"🟠 EQUIPO 2")
+            fig2 = dibujar_cancha(eq2, f"Promedio: {prom2:.2f}", "#e67e22")
+            st.plotly_chart(fig2, use_container_width=True)
+            
+            with st.expander("Ver lista de jugadores"):
+                for j in eq2:
+                    amigo_txt = f" *(con {j['amigo']})*" if j['amigo'] else ""
+                    st.caption(f"**{j['posicion']}** | {j['nombre']} {amigo_txt}")

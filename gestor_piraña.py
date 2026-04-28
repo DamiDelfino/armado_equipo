@@ -36,7 +36,7 @@ def inicializar_db():
             ("Pitu", "DEF", 78,""), ("Gusti", "MED", 75,""), ("Lucho", "DEL", 70,""),
             ("Chizzo", "DEL", 60,""), ("Facu Amorena", "DEL", 73,""), ("Edgar", "DEF", 80,""),
             ("Gonza", "DEF", 79,""), ("Fer", "MED", 80,""), ("Nico", "DEL", 77,""),
-            ("Brian", "MED", 73,""), ("Agustiki", "DEL", 80,""), ("David", "MED", 82,""),
+            ("Brian", "MED", 73,""), ("Agustiki", "DEL", 80,""), ("David", "MED", 82,"Santiago"),
             ("Nacho", "DEF", 81,""),("Mario", "MED", 80, "Cesar")
         ]
         cursor.executemany("INSERT INTO jugadores (nombre, posicion, valoracion, amigo) VALUES (?, ?, ?, ?)", plantel_inicial)

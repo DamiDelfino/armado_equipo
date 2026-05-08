@@ -51,6 +51,9 @@ def inicializar_db():
 # ==========================================
 # 2. FUNCIÓN DE DIBUJO DE CANCHA
 # ==========================================
+# ==========================================
+# 2. FUNCIÓN DE DIBUJO DE CANCHA (MODIFICADA)
+# ==========================================
 def dibujar_cancha(equipo, titulo, color_puntos):
     posiciones_orden = ["ARQ", "DEF", "MED", "DEL"]
     coords_x = []
@@ -65,12 +68,15 @@ def dibujar_cancha(equipo, titulo, color_puntos):
             x_pos = (i + 1) * (100 / (n + 1))
             coords_x.append(x_pos)
             coords_y.append(alturas[pos])
-            nombres.append(f"{j['nombre']}<br>({j['valoracion']})")
+            
+            # ACÁ EL CAMBIO: Solo agregamos el nombre a la etiqueta del jugador
+            nombres.append(f"{j['nombre']}")
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=coords_x, y=coords_y, mode='markers+text', text=nombres, textposition="top center",
-        marker=dict(size=25, color=color_puntos, line=dict(width=2, color='white')), textfont=dict(color='white', size=11)
+        marker=dict(size=25, color=color_puntos, line=dict(width=2, color='white')), 
+        textfont=dict(color='white', size=13) # Letra apenas más grande para que se lea mejor
     ))
     fig.update_layout(
         title=dict(text=titulo, font=dict(color='white', size=18), x=0.5),
@@ -82,7 +88,6 @@ def dibujar_cancha(equipo, titulo, color_puntos):
     fig.add_shape(type="rect", x0=20, y0=0, x1=80, y1=15, line=dict(color="white")) 
     fig.add_shape(type="circle", x0=40, y0=95, x1=60, y1=105, line=dict(color="white")) 
     return fig
-
 # ==========================================
 # 3. CONFIGURACIÓN E INTERFAZ
 # ==========================================

@@ -115,7 +115,7 @@ def cargar_formulario(event):
         entry_amigo.insert(0, v[4] if str(v[4]) != "None" else "")
 
 # ==========================================
-# 3. BALANCEO Y ORDEN TÁCTICO (ALGORITMO ACTUALIZADO)
+# 3. BALANCEO Y ORDEN TÁCTICO (ALGORITMO DE ALTA PRECISIÓN)
 # ==========================================
 
 def generar_equipos():
@@ -135,7 +135,6 @@ def generar_equipos():
             "amigo": str(v[4]) if str(v[4]) != "None" else ""
         })
 
-    # Lógica de Grupos y Amigos
     procesados = set(); grupos = []
     for j in convocados:
         if j["nombre"] in procesados: continue
@@ -174,7 +173,7 @@ def generar_equipos():
 
     def val_eq(e): return sum(x["valoracion"] for x in e)
 
-    # 3.2 Repartir Bloques de Amigos primero
+    # 3.2 Repartir Bloques de Amigos
     grupos_amigos = [g for g in grupos_restantes if len(g) > 1]
     grupos_solos = [g for g in grupos_restantes if len(g) == 1]
 
@@ -184,7 +183,7 @@ def generar_equipos():
             eq1.extend(g)
         else: eq2.extend(g)
 
-    # 3.3 Repartir Línea por Línea
+    # 3.3 Repartir Línea por Línea (Reparto en Espejo / Pares)
     solos = [g[0] for g in grupos_solos]
     def_s = [j for j in solos if j["posicion"] == "DEF"]
     med_s = [j for j in solos if j["posicion"] == "MED"]
@@ -193,23 +192,69 @@ def generar_equipos():
 
     def balancear_linea(lista):
         lista.sort(key=lambda x: x["valoracion"], reverse=True)
-        for j in lista:
-            if len(eq1) < 8 and (val_eq(eq1) <= val_eq(eq2) or len(eq2) == 8):
-                eq1.append(j)
-            elif len(eq2) < 8: eq2.append(j)
-            else: eq1.append(j)
+        # Agrupamos de a dos para distribuir la calidad de forma idéntica
+        for i in range(0, len(lista), 2):
+            par = lista[i:i+2]
+            if len(par) == 2:
+                # El mejor del par va al que tenga menos puntos, el otro al que tenga más
+                if val_eq(eq1) <= val_eq(eq2) and len(eq1) < 8 and len(eq2) < 8:
+                    eq1.append(par[0])
+                    eq2.append(par[1])
+                elif len(eq2) < 8 and len(eq1) < 8:
+                    eq2.append(par[0])
+                    eq1.append(par[1])
+                else: # Si alguno ya se llenó (fallback de seguridad)
+                    for j in par:
+                        if len(eq1) < 8: eq1.append(j)
+                        else: eq2.append(j)
+            else: # Quedó un jugador impar en esa línea
+                j = par[0]
+                if len(eq1) < 8 and (val_eq(eq1) <= val_eq(eq2) or len(eq2) == 8):
+                    eq1.append(j)
+                else:
+                    eq2.append(j)
 
     balancear_linea(arq_s)
     balancear_linea(def_s)
     balancear_linea(med_s)
     balancear_linea(del_s)
 
-    # Ordenar resultados por ARQ-DEF-MED-DEL para mostrarlos prolijos
+    # 3.4 FASE DE POST-OPTIMIZACIÓN (El "Filtro Fino")
+    # Intercambiamos jugadores del mismo puesto para acercar los promedios al máximo posible
+    nombres_amigos = set(j["nombre"] for g in grupos_amigos for j in g)
+    
+    mejoro = True
+    while mejoro:
+        mejoro = False
+        diff_actual = abs(val_eq(eq1) - val_eq(eq2))
+        
+        for j1 in eq1:
+            if j1["nombre"] in nombres_amigos or j1["posicion"] == "ARQ": continue
+            for j2 in eq2:
+                if j2["nombre"] in nombres_amigos or j2["posicion"] == "ARQ": continue
+                
+                # Tienen que jugar de lo mismo para no arruinar el balanceo táctico
+                if j1["posicion"] == j2["posicion"]:
+                    # Simulamos matemáticamente cómo quedaría la diferencia si los cambiamos
+                    nueva_diff = abs((val_eq(eq1) - j1["valoracion"] + j2["valoracion"]) - 
+                                     (val_eq(eq2) - j2["valoracion"] + j1["valoracion"]))
+                    
+                    if nueva_diff < diff_actual:
+                        # Si la diferencia se achicó, aplicamos el intercambio real
+                        eq1.remove(j1)
+                        eq1.append(j2)
+                        eq2.remove(j2)
+                        eq2.append(j1)
+                        diff_actual = nueva_diff
+                        mejoro = True
+                        break # Rompemos los bucles para reevaluar desde cero con la nueva diferencia
+            if mejoro: break
+
+    # 3.5 Ordenar y Mostrar Resultados
     prioridad = {"ARQ": 0, "DEF": 1, "MED": 2, "DEL": 3}
     eq1.sort(key=lambda x: prioridad.get(x["posicion"], 4))
     eq2.sort(key=lambda x: prioridad.get(x["posicion"], 4))
 
-    # Imprimir en la interfaz
     texto_resultado.delete(1.0, tk.END)
     for i, eq in enumerate([eq1, eq2], 1):
         prom = val_eq(eq)/8 if len(eq) == 8 else 0

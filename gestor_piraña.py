@@ -28,16 +28,21 @@ def inicializar_db():
     cursor.execute("SELECT COUNT(*) FROM jugadores")
     if cursor.fetchone()[0] == 0:
         plantel_inicial = [
-            ("Tucu", "DEF", 82,""), ("Fabi", "DEF", 81,""), ("Ale", "MED", 71,""),
-            ("Dami", "DEF", 79,""), ("Martn", "MED", 84,""), ("Cesar", "MED", 79,""),
-            ("Giorgio", "MED", 81,""), ("Santiago", "DEL", 84,""), ("Toro", "ARQ", 80,""),
-            ("Pipino", "MED", 81,""), ("Pablito", "MED", 82,""), ("Chapa", "MED", 80,""),
-            ("Rodri", "DEL", 79,""), ("Pasteles", "DEL", 78,""), ("Tojo", "DEF", 77,""),
-            ("Pitu", "DEF", 78,""), ("Gusti", "MED", 75,""), ("Lucho", "DEL", 70,""),
-            ("Chizzo", "DEL", 60,""), ("Facu Amorena", "DEL", 73,""), ("Edgar", "DEF", 80,""),
-            ("Gonza", "DEF", 79,""), ("Fer", "MED", 80,""), ("Nico", "DEL", 77,""),
-            ("Brian", "MED", 73,""), ("Agustiki", "DEL", 80,""), ("David", "MED", 82,"Santiago"),
-            ("Nacho", "DEF", 81,""),("Mario", "MED", 80, "Cesar")
+            ("Tucu", "DEF", "Ninguna", 82, ""), ("Fabi", "DEF", "Ninguna", 81, ""), 
+            ("Ale", "MED", "Ninguna", 75, ""), ("Dami", "DEF", "Ninguna", 79, ""), 
+            ("Martn", "MED", "Ninguna", 84, ""), ("Cesar", "MED", "Ninguna", 79, ""),
+            ("Giorgio", "MED", "Ninguna", 81, ""), ("Santiago", "DEL", "Ninguna", 84, ""), 
+            ("Toro", "ARQ", "Ninguna", 80, ""), ("Pipino", "MED", "Ninguna", 81, ""), 
+            ("Pablito", "MED", "Ninguna", 81, ""), ("Chapa", "MED", "Ninguna", 80, ""),
+            ("Rodri", "DEL", "Ninguna", 79, ""), ("Pasteles", "DEL", "Ninguna", 78, ""), 
+            ("Tojo", "DEF", "Ninguna", 77, ""), ("Pitu", "DEF", "Ninguna", 78, ""), 
+            ("Gusti", "MED", "Ninguna", 77, ""), ("Lucho", "DEL", "Ninguna", 70, ""),
+            ("Chizzo", "DEL", "Ninguna", 60, ""), ("Facu Amorena", "DEL", "Ninguna", 76, ""), 
+            ("Edgar", "DEF", "Ninguna", 80, ""), ("Gonza", "DEF", "Ninguna", 79, ""), 
+            ("Fer", "MED", "Ninguna", 80, ""), ("Nico", "DEL", "Ninguna", 77, ""),
+            ("Brian", "MED", "Ninguna", 76, ""), ("Agustiki", "DEL", "Ninguna", 80, ""), 
+            ("David", "MED", "Ninguna", 82, ""), ("Nacho", "DEF", "Ninguna", 81, ""), 
+            ("Mario", "MED", "Ninguna", 80, "Cesar"), ("Beto", "ARQ", "Ninguna", 77, "Cesar")
         ]
         cursor.executemany("INSERT INTO jugadores (nombre, posicion, valoracion, amigo) VALUES (?, ?, ?, ?)", plantel_inicial)
         conn.commit()

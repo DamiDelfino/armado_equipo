@@ -29,20 +29,20 @@ def inicializar_db():
         # Actualizamos la lista inicial para incluir la posición secundaria ("Ninguna" por defecto)
         plantel_inicial = [
             ("Tucu", "DEF", "Ninguna", 82, ""), ("Fabi", "DEF", "Ninguna", 81, ""), 
-            ("Ale", "MED", "Ninguna", 75, ""), ("Dami", "DEF", "Ninguna", 79, ""), 
-            ("Martn", "MED", "Ninguna", 84, ""), ("Cesar", "MED", "Ninguna", 79, ""),
-            ("Giorgio", "MED", "Ninguna", 81, ""), ("Santiago", "DEL", "Ninguna", 84, ""), 
-            ("Toro", "ARQ", "Ninguna", 80, ""), ("Pipino", "MED", "Ninguna", 81, ""), 
-            ("Pablito", "MED", "Ninguna", 81, ""), ("CHAPA", "MED", "Ninguna", 80, ""),
+            ("Ale", "MED", "Ninguna", 75, ""), ("Dami", "DEF", "MED", 79, ""), 
+            ("Martn", "MED", "DEL", 84, ""), ("Cesar", "MED", "Ninguna", 79, ""),
+            ("Giorgio", "MED", "DEF", 81, ""), ("Santiago", "DEL", "MED", 84, ""), 
+            ("Toro", "ARQ", "Ninguna", 80, ""), ("Pipino", "MED", "DEL", 81, ""), 
+            ("Pablito", "MED", "DEL", 81, ""), ("Chapa", "MED", "Ninguna", 80, ""),
             ("Rodri", "DEL", "Ninguna", 79, ""), ("Pasteles", "DEL", "Ninguna", 78, ""), 
             ("Tojo", "DEF", "Ninguna", 77, ""), ("Pitu", "DEF", "Ninguna", 78, ""), 
             ("Gusti", "MED", "Ninguna", 77, ""), ("Lucho", "DEL", "Ninguna", 70, ""),
             ("Chizzo", "DEL", "Ninguna", 60, ""), ("Facu Amorena", "DEL", "Ninguna", 76, ""), 
-            ("Edgar", "DEF", "Ninguna", 80, ""), ("Gonza", "DEF", "Ninguna", 79, ""), 
+            ("Edgar", "DEF", "Ninguna", 80, ""), ("Gonza", "DEF", "MED", 79, ""), 
             ("Fer", "MED", "Ninguna", 80, ""), ("Nico", "DEL", "Ninguna", 77, ""),
             ("Brian", "MED", "Ninguna", 76, ""), ("Agustiki", "DEL", "Ninguna", 80, ""), 
             ("David", "MED", "Ninguna", 82, ""), ("Nacho", "DEF", "Ninguna", 81, ""), 
-            ("Mario", "MED", "Ninguna", 80, "Cesar")
+            ("Mario", "MED", "Ninguna", 80, "Cesar"), ("Beto", "ARQ", "Ninguna", 77, "Cesar")
         ]
         cursor.executemany("INSERT INTO jugadores (nombre, posicion, pos_secundaria, valoracion, amigo) VALUES (?, ?, ?, ?, ?)", plantel_inicial)
         conn.commit()

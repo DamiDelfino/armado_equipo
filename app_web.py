@@ -98,7 +98,7 @@ with st.expander("✏️ Modificar o Eliminar Jugador"):
 st.subheader("Seleccioná los 16 del partido")
 df_edit = df_db[["nombre", "posicion", "pos_secundaria", "valoracion", "amigo"]].copy()
 df_edit.insert(0, "Selección", False)
-tab_edit = st.data_editor(df_edit, column_config={"Selección": st.column_config.CheckboxColumn("¿Juega?", default=False), "valoracion": st.column_config.ProgressColumn("Nivel", 0, 99, "%d")}, disabled=["nombre", "posicion", "pos_secundaria", "valoracion", "amigo"], hide_index=True, use_container_width=True)
+tab_edit = st.data_editor(df_edit, column_config={"Selección": st.column_config.CheckboxColumn("¿Juega?", default=False), "valoracion": st.column_config.ProgressColumn("Nivel", min_value=0, max_value=99, format="%d")}, disabled=["nombre", "posicion", "pos_secundaria", "valoracion", "amigo"], hide_index=True, use_container_width=True)
 conv_raw = tab_edit[tab_edit["Selección"] == True]
 
 # ==========================================

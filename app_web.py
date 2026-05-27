@@ -36,7 +36,7 @@ def dibujar_cancha(equipo, titulo, color_puntos):
         for i, j in enumerate(jugadores_en_pos):
             x_pos = (i + 1) * (100 / (n + 1))
             coords_x.append(x_pos); coords_y.append(alturas[pos])
-            nombres.append(f"{j['nombre']}") # Sin números para no herir sentimientos
+            nombres.append(f"{j['nombre']}")
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -59,15 +59,13 @@ def dibujar_cancha(equipo, titulo, color_puntos):
 # 3. INTERFAZ WEB
 # ==========================================
 st.set_page_config(page_title="Fútbol 8 Pro", page_icon="⚽", layout="wide")
-st.title("⚽ Gestor de Equipos")
+st.title("⚽ Armador de Equipos EA FC")
 
-# Lectura de datos incluyendo los 6 atributos
 try:
     conn = conectar_db()
     df_db = pd.read_sql('SELECT * FROM jugadores ORDER BY LOWER(nombre) ASC', conn)
     conn.close()
     
-    # Calculamos la valoración real para cada jugador en el DataFrame
     df_db['valoracion_real'] = df_db.apply(lambda r: calcular_media_global(
         r['posicion'], r['ritmo'], r['tiro'], r['pase'], r['regate'], r['defensa'], r['fisico']
     ), axis=1)
@@ -96,8 +94,8 @@ with st.expander("➕ Nuevo Jugador (Cargar Stats)"):
         if st.form_submit_button("Guardar en Supabase"):
             if n_n:
                 conn = conectar_db(); cur = conn.cursor()
-                cur.execute("INSERT INTO jugadores (nombre, posicion, pos_secundaria, amigo, ritmo, tiro, pase, regate, defensa, fisico, valoracion) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", 
-                             (n_n, p_n, s_n, a_n, rit, tir, pas, reg, _df, fis, 75))
+                cur.execute("INSERT INTO jugadores (nombre, posicion, pos_secundaria, amigo, ritmo, tiro, pase, regate, defensa, fisico) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", 
+                             (n_n, p_n, s_n, a_n, rit, tir, pas, reg, _df, fis))
                 conn.commit(); cur.close(); conn.close(); st.rerun()
 
 # --- PANEL 2: MODIFICAR JUGADOR ---
@@ -147,7 +145,7 @@ tab_edit = st.data_editor(
 conv_raw = tab_edit[tab_edit["Selección"] == True]
 
 # ==========================================
-# 4. ALGORITMO ESPEJO + OPTIMIZACIÓN
+# 4. ALGORITMO ESPEJO + OPTIMIZACIÓN (CORREGIDO)
 # ==========================================
 if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container_width=True):
     if len(conv_raw) != 16:
@@ -159,6 +157,7 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
 
         def val_eq(e): return sum(x["valoracion"] for x in e)
 
+        # Agrupación bidireccional por amigos
         procesados = set(); grupos = []
         for j in convocados:
             if j["nombre"] in procesados: continue
@@ -171,7 +170,8 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
             grupos.append(g)
 
         eq1, eq2 = [], []
-        # Reparto de Arqueros y compensación
+        
+        # 4.1 Reparto de Arqueros y compensación inicial
         arqs_g = [g for g in grupos if any(x["posicion"] == "ARQ" for x in g)]
         if len(arqs_g) >= 2:
             eq1.extend(arqs_g[0]); eq2.extend(arqs_g[1])
@@ -183,10 +183,16 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                 m_def = max(libres, key=lambda g: max((x["valoracion"] for x in g if x["posicion"]=="DEF"), default=-1))
                 eq2.extend(m_def); grupos.remove(m_def)
 
-        # Reparto Espejo de individuales por línea
-        solos = sorted([g[0] for g in grupos if len(g) == 1], key=lambda x: x["valoracion"], reverse=True)
+        # 4.2 AGREGADO: Reparto de Bloques de Amigos (Dúos)
+        g_amigos = sorted([g for g in grupos if len(g) > 1], key=lambda x: sum(j["valoracion"] for j in x), reverse=True)
+        for g in g_amigos:
+            if val_eq(eq1) <= val_eq(eq2) and len(eq1) + len(g) <= 8: eq1.extend(g)
+            else: eq2.extend(g)
+
+        # 4.3 Reparto Espejo de individuales por línea (Filtro corregido)
+        solos = [g[0] for g in grupos if len(g) == 1 and g[0] not in eq1 and g[0] not in eq2]
         for pos in ["DEF", "MED", "DEL", "ARQ"]:
-            linea = [j for j in solos if j["posicion"] == pos]
+            linea = sorted([j for j in solos if j["posicion"] == pos], key=lambda x: x["valoracion"], reverse=True)
             for i in range(0, len(linea), 2):
                 par = linea[i:i+2]
                 if len(par) == 2:
@@ -196,11 +202,41 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                     if val_eq(eq1) <= val_eq(eq2): eq1.append(par[0])
                     else: eq2.append(par[0])
 
+        # 4.4 AGREGADO: Post-Optimización fina por intercambios tácticos
+        nombres_amigos = set(j["nombre"] for g in g_amigos for j in g)
+        mejoro = True
+        while mejoro:
+            mejoro = False
+            diff = abs(val_eq(eq1) - val_eq(eq2))
+            for j1 in [x for x in eq1 if x["nombre"] not in nombres_amigos and x["posicion"] != "ARQ"]:
+                for j2 in [x for x in eq2 if x["nombre"] not in nombres_amigos and x["posicion"] != "ARQ"]:
+                    if j1["posicion"] == j2["posicion"]:
+                        n_diff = abs((val_eq(eq1)-j1["valoracion"]+j2["valoracion"]) - (val_eq(eq2)-j2["valoracion"]+j1["valoracion"]))
+                        if n_diff < diff:
+                            eq1.remove(j1); eq1.append(j2)
+                            eq2.remove(j2); eq2.append(j1)
+                            diff = n_diff; mejoro = True; break
+                if mejoro: break
+
+        # Orden final visual por líneas
+        prioridad = {"ARQ": 0, "DEF": 1, "MED": 2, "DEL": 3}
+        eq1.sort(key=lambda x: prioridad.get(x["posicion"], 4))
+        eq2.sort(key=lambda x: prioridad.get(x["posicion"], 4))
+
+        # --- MOSTRAR RESULTADOS ---
         st.divider()
         col1, col2 = st.columns(2)
         with col1:
             st.success("🔵 EQUIPO 1")
             st.plotly_chart(dibujar_cancha(eq1, "Balanceado ✅", "#3498db"), use_container_width=True)
+            with st.expander("Lista"):
+                for j in eq1:
+                    sec = f" (Sec: {j['pos_secundaria']})" if j['pos_secundaria'] != "Ninguna" else ""
+                    st.write(f"**{j['posicion']}** - {j['nombre']}{sec}")
         with col2:
             st.warning("🟠 EQUIPO 2")
             st.plotly_chart(dibujar_cancha(eq2, "Balanceado ✅", "#e67e22"), use_container_width=True)
+            with st.expander("Lista"):
+                for j in eq2:
+                    sec = f" (Sec: {j['pos_secundaria']})" if j['pos_secundaria'] != "Ninguna" else ""
+                    st.write(f"**{j['posicion']}** - {j['nombre']}{sec}")

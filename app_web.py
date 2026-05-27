@@ -23,7 +23,7 @@ def calcular_media_global(pos, rit, tir, pas, reg, _def, fis):
     return round(val)
 
 # ==========================================
-# 2. FUNCIÓN DE DIBUJO DE CANCHA (VISTA LIMPIA)
+# 2. FUNCIÓN DE DIBUJO DE CANCHA
 # ==========================================
 def dibujar_cancha(equipo, titulo, color_puntos):
     posiciones_orden = ["ARQ", "DEF", "MED", "DEL"]
@@ -145,7 +145,7 @@ tab_edit = st.data_editor(
 conv_raw = tab_edit[tab_edit["Selección"] == True]
 
 # ==========================================
-# 4. ALGORITMO ESPEJO + OPTIMIZACIÓN (CORREGIDO)
+# 4. ALGORITMO CON COMODÍN AUTOMÁTICO
 # ==========================================
 if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container_width=True):
     if len(conv_raw) != 16:
@@ -155,9 +155,40 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
         for _, row in conv_raw.iterrows():
             convocados.append({"nombre": str(row["nombre"]), "posicion": str(row["posicion"]), "pos_secundaria": str(row["pos_secundaria"]), "valoracion": int(row["valoracion_real"]), "amigo": str(row["amigo"]) if pd.notna(row["amigo"]) else ""})
 
+        # --- FASE 1: SISTEMA DE COMODÍN AUTOMÁTICO (Tapar Huecos) ---
+        minimos = {"ARQ": 2, "DEF": 4, "MED": 4, "DEL": 2}
+        cambios_tacticos = []
+
+        for pos_req, min_req in minimos.items():
+            cant_actual = sum(1 for j in convocados if j["posicion"] == pos_req)
+            faltantes = min_req - cant_actual
+            
+            if faltantes > 0:
+                # Buscamos candidatos con esta posición secundaria
+                candidatos = [j for j in convocados if j["pos_secundaria"] == pos_req and j["posicion"] != pos_req]
+                
+                for cand in candidatos:
+                    if faltantes == 0: break
+                    
+                    pos_orig = cand["posicion"]
+                    # Verificamos si podemos sacarlo sin arruinar su línea original
+                    cant_orig = sum(1 for j in convocados if j["posicion"] == pos_orig)
+                    if cant_orig > minimos.get(pos_orig, 0):
+                        cand["posicion"] = pos_req # Efectuamos el cambio
+                        cand["pos_secundaria"] = "Ninguna"
+                        faltantes -= 1
+                        cambios_tacticos.append(f"🔄 **{cand['nombre']}** pasó de {pos_orig} a {pos_req}.")
+
+        # Mostrar aviso si hubo ajustes
+        if cambios_tacticos:
+            with st.expander("🛠️ Ajustes Tácticos Automáticos", expanded=True):
+                st.info("El sistema detectó huecos y reubicó jugadores polifuncionales:")
+                for cambio in cambios_tacticos:
+                    st.write(cambio)
+
+        # --- FASE 2: REPARTO ESTÁNDAR ---
         def val_eq(e): return sum(x["valoracion"] for x in e)
 
-        # Agrupación bidireccional por amigos
         procesados = set(); grupos = []
         for j in convocados:
             if j["nombre"] in procesados: continue
@@ -170,8 +201,6 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
             grupos.append(g)
 
         eq1, eq2 = [], []
-        
-        # 4.1 Reparto de Arqueros y compensación inicial
         arqs_g = [g for g in grupos if any(x["posicion"] == "ARQ" for x in g)]
         if len(arqs_g) >= 2:
             eq1.extend(arqs_g[0]); eq2.extend(arqs_g[1])
@@ -183,13 +212,11 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                 m_def = max(libres, key=lambda g: max((x["valoracion"] for x in g if x["posicion"]=="DEF"), default=-1))
                 eq2.extend(m_def); grupos.remove(m_def)
 
-        # 4.2 AGREGADO: Reparto de Bloques de Amigos (Dúos)
         g_amigos = sorted([g for g in grupos if len(g) > 1], key=lambda x: sum(j["valoracion"] for j in x), reverse=True)
         for g in g_amigos:
             if val_eq(eq1) <= val_eq(eq2) and len(eq1) + len(g) <= 8: eq1.extend(g)
             else: eq2.extend(g)
 
-        # 4.3 Reparto Espejo de individuales por línea (Filtro corregido)
         solos = [g[0] for g in grupos if len(g) == 1 and g[0] not in eq1 and g[0] not in eq2]
         for pos in ["DEF", "MED", "DEL", "ARQ"]:
             linea = sorted([j for j in solos if j["posicion"] == pos], key=lambda x: x["valoracion"], reverse=True)
@@ -202,7 +229,6 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                     if val_eq(eq1) <= val_eq(eq2): eq1.append(par[0])
                     else: eq2.append(par[0])
 
-        # 4.4 AGREGADO: Post-Optimización fina por intercambios tácticos
         nombres_amigos = set(j["nombre"] for g in g_amigos for j in g)
         mejoro = True
         while mejoro:
@@ -218,7 +244,6 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                             diff = n_diff; mejoro = True; break
                 if mejoro: break
 
-        # Orden final visual por líneas
         prioridad = {"ARQ": 0, "DEF": 1, "MED": 2, "DEL": 3}
         eq1.sort(key=lambda x: prioridad.get(x["posicion"], 4))
         eq2.sort(key=lambda x: prioridad.get(x["posicion"], 4))
@@ -231,6 +256,7 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
             st.plotly_chart(dibujar_cancha(eq1, "Balanceado ✅", "#3498db"), use_container_width=True)
             with st.expander("Lista"):
                 for j in eq1:
+                    # Si fue usado como comodín, ya no mostrará secundaria porque la reescribimos a "Ninguna" temporalmente
                     sec = f" (Sec: {j['pos_secundaria']})" if j['pos_secundaria'] != "Ninguna" else ""
                     st.write(f"**{j['posicion']}** - {j['nombre']}{sec}")
         with col2:

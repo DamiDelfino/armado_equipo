@@ -59,7 +59,7 @@ def dibujar_cancha(equipo, titulo, color_puntos):
 # 3. INTERFAZ WEB
 # ==========================================
 st.set_page_config(page_title="Fútbol 8 Pro", page_icon="⚽", layout="wide")
-st.title("⚽ Armador de Equipos EA FC")
+st.title("⚽ Armador de Equipos Piraña")
 
 try:
     conn = conectar_db()

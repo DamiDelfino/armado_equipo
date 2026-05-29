@@ -61,7 +61,6 @@ def dibujar_cancha(equipo, titulo, color_puntos):
 st.set_page_config(page_title="Fútbol Pro", page_icon="⚽", layout="wide")
 st.title("⚽ Armador de Equipos Piraña")
 
-# --- Selector de Formato ---
 formato_partido = st.selectbox(
     "Seleccioná el formato del partido:",
     ["Fútbol 5 (10 jugadores)", "Fútbol 7 (14 jugadores)", "Fútbol 8 (16 jugadores)", "Fútbol 9 (18 jugadores)"],
@@ -222,33 +221,37 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                 else: eq1.append(mejor_del)
                 solos.remove(mejor_del)
 
-        # --- 4.5 REPARTO DE AMIGOS ---
+        # --- 4.5 REPARTO DE AMIGOS (Respeto absoluto) ---
         g_amigos = sorted([g for g in grupos if len(g) > 1], key=lambda x: sum(j["valoracion"] for j in x), reverse=True)
         for g in g_amigos:
             if val_eq(eq1) <= val_eq(eq2) and len(eq1) + len(g) <= limite_eq: eq1.extend(g)
             else: eq2.extend(g)
 
-        # --- 4.6 NUEVO: REPARTO INTELIGENTE DE INDIVIDUALES (Táctica primero, Puntos después) ---
+        # --- 4.6 REPARTO FLEXIBLE DE INDIVIDUALES (Armonía sin ser idénticos) ---
         solos_ordenados = sorted(solos, key=lambda x: x["valoracion"], reverse=True)
         for j in solos_ordenados:
             pos = j["posicion"]
-            # Contamos cuántos jugadores de ESA posición tiene cada equipo AHORA MISMO
             c1 = sum(1 for x in eq1 if x["posicion"] == pos)
             c2 = sum(1 for x in eq2 if x["posicion"] == pos)
             
-            # Prioridad 1: Balance Táctico (Si un equipo tiene menos de esta posición, se lo damos)
-            if c1 < c2 and len(eq1) < limite_eq:
-                eq1.append(j)
-            elif c2 < c1 and len(eq2) < limite_eq:
-                eq2.append(j)
-            # Prioridad 2: Si están empatados en posiciones, nivelamos por puntos generales
-            else:
-                if val_eq(eq1) <= val_eq(eq2) and len(eq1) < limite_eq:
+            # Buscamos equilibrar el nivel general primero
+            equipo_ideal = 1 if val_eq(eq1) <= val_eq(eq2) else 2
+            
+            # Filtro de Armonía: Permite diferencia de 1 (ej. 3 a 2), pero evita diferencia de 2 (ej. 4 a 2 o 3 a 1)
+            if equipo_ideal == 1:
+                if (c1 + 1) - c2 >= 2 and len(eq2) < limite_eq:
+                    eq2.append(j) # Forzamos al equipo 2 para frenar la acumulación
+                elif len(eq1) < limite_eq:
                     eq1.append(j)
+                else:
+                    eq2.append(j)
+            else:
+                if (c2 + 1) - c1 >= 2 and len(eq1) < limite_eq:
+                    eq1.append(j) # Forzamos al equipo 1 para frenar la acumulación
                 elif len(eq2) < limite_eq:
                     eq2.append(j)
                 else:
-                    eq1.append(j) # Resguardo de seguridad
+                    eq1.append(j)
 
         # --- 4.7 POST-OPTIMIZACIÓN FINA ---
         nombres_amigos = set(j["nombre"] for g in g_amigos for j in g)
@@ -258,7 +261,6 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
             diff = abs(val_eq(eq1) - val_eq(eq2))
             for j1 in [x for x in eq1 if x["nombre"] not in nombres_amigos and x["posicion"] != "ARQ"]:
                 for j2 in [x for x in eq2 if x["nombre"] not in nombres_amigos and x["posicion"] != "ARQ"]:
-                    # Intercambiamos solo si juegan exactamente de lo mismo, así no rompemos la táctica
                     if j1["posicion"] == j2["posicion"]:
                         n_diff = abs((val_eq(eq1)-j1["valoracion"]+j2["valoracion"]) - (val_eq(eq2)-j2["valoracion"]+j1["valoracion"]))
                         if n_diff < diff:

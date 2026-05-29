@@ -65,9 +65,8 @@ st.title("⚽ Armador de Equipos Piraña")
 formato_partido = st.selectbox(
     "Seleccioná el formato del partido:",
     ["Fútbol 5 (10 jugadores)", "Fútbol 7 (14 jugadores)", "Fútbol 8 (16 jugadores)", "Fútbol 9 (18 jugadores)"],
-    index=2 # Por defecto en Fútbol 8
+    index=2
 )
-# Extraemos el número total de jugadores permitidos
 cupo_total = int(formato_partido.split("(")[1].split()[0])
 limite_eq = cupo_total // 2
 
@@ -148,7 +147,7 @@ tab_edit = st.data_editor(
 conv_raw = tab_edit[tab_edit["Selección"] == True]
 
 # ==========================================
-# 4. ALGORITMO MULTIFORMATO
+# 4. ALGORITMO TÁCTICO AVANZADO
 # ==========================================
 if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container_width=True):
     if len(conv_raw) != cupo_total:
@@ -158,11 +157,9 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
         for _, row in conv_raw.iterrows():
             convocados.append({"nombre": str(row["nombre"]), "posicion": str(row["posicion"]), "pos_secundaria": str(row["pos_secundaria"]), "valoracion": int(row["valoracion_real"]), "amigo": str(row["amigo"]) if pd.notna(row["amigo"]) else ""})
 
-        # --- REGLAS TÁCTICAS DINÁMICAS ---
-        if cupo_total == 10:
-            minimos = {"ARQ": 2, "DEF": 0, "MED": 0, "DEL": 0} # F5 Libre
-        else:
-            minimos = {"ARQ": 2, "DEF": 4, "MED": 4, "DEL": 2} # F7, F8, F9 Estructurados
+        # --- 4.1 EL COMODÍN (Tapar Huecos) ---
+        if cupo_total == 10: minimos = {"ARQ": 2, "DEF": 0, "MED": 0, "DEL": 0}
+        else: minimos = {"ARQ": 2, "DEF": 4, "MED": 4, "DEL": 2}
 
         cambios_tacticos = []
         for pos_req, min_req in minimos.items():
@@ -173,8 +170,7 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                 for cand in candidatos:
                     if faltantes == 0: break
                     pos_orig = cand["posicion"]
-                    cant_orig = sum(1 for j in convocados if j["posicion"] == pos_orig)
-                    if cant_orig > minimos.get(pos_orig, 0):
+                    if sum(1 for j in convocados if j["posicion"] == pos_orig) > minimos.get(pos_orig, 0):
                         cand["posicion"] = pos_req
                         cand["pos_secundaria"] = "Ninguna"
                         faltantes -= 1
@@ -187,6 +183,7 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
 
         def val_eq(e): return sum(x["valoracion"] for x in e)
 
+        # --- 4.2 AGRUPAR AMIGOS ---
         procesados = set(); grupos = []
         for j in convocados:
             if j["nombre"] in procesados: continue
@@ -199,11 +196,10 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
             grupos.append(g)
 
         eq1, eq2 = [], []
+        
+        # --- 4.3 REPARTO DE ARQUEROS ---
         arqs_g = [g for g in grupos if any(x["posicion"] == "ARQ" for x in g)]
-        
-        # Sorteamos a los arqueros de mejor a peor
         arqs_g = sorted(arqs_g, key=lambda g: max(x["valoracion"] for x in g if x["posicion"]=="ARQ"), reverse=True)
-        
         if len(arqs_g) >= 2:
             eq1.extend(arqs_g[0]); eq2.extend(arqs_g[1])
             grupos = [g for g in grupos if g not in arqs_g]
@@ -214,45 +210,47 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                 m_def = max(libres, key=lambda g: max((x["valoracion"] for x in g if x["posicion"]=="DEF"), default=-1))
                 eq2.extend(m_def); grupos.remove(m_def)
 
-        # --- REGLA ESPECIAL FÚTBOL 5 ---
+        # --- 4.4 REGLA FÚTBOL 5 ---
         solos = [g[0] for g in grupos if len(g) == 1 and g[0] not in eq1 and g[0] not in eq2]
         if cupo_total == 10:
             max_arq_1 = max([x["valoracion"] for x in eq1 if x["posicion"] == "ARQ"], default=-1)
             max_arq_2 = max([x["valoracion"] for x in eq2 if x["posicion"] == "ARQ"], default=-1)
             dels_solos = sorted([j for j in solos if j["posicion"] == "DEL"], key=lambda x: x["valoracion"], reverse=True)
-            
             if dels_solos and (max_arq_1 > -1 or max_arq_2 > -1):
                 mejor_del = dels_solos[0]
-                # Si el Eq1 tiene al mejor ARQ, el Eq2 se lleva al mejor DEL (y viceversa)
                 if max_arq_1 > max_arq_2: eq2.append(mejor_del)
                 else: eq1.append(mejor_del)
                 solos.remove(mejor_del)
 
-        # Reparto de Amigos
+        # --- 4.5 REPARTO DE AMIGOS ---
         g_amigos = sorted([g for g in grupos if len(g) > 1], key=lambda x: sum(j["valoracion"] for j in x), reverse=True)
         for g in g_amigos:
             if val_eq(eq1) <= val_eq(eq2) and len(eq1) + len(g) <= limite_eq: eq1.extend(g)
             else: eq2.extend(g)
 
-        # Reparto Espejo individual
-        for pos in ["DEF", "MED", "DEL", "ARQ"]:
-            linea = sorted([j for j in solos if j["posicion"] == pos], key=lambda x: x["valoracion"], reverse=True)
-            for i in range(0, len(linea), 2):
-                par = linea[i:i+2]
-                if len(par) == 2:
-                    if val_eq(eq1) <= val_eq(eq2) and len(eq1) < limite_eq and len(eq2) < limite_eq:
-                        eq1.append(par[0]); eq2.append(par[1])
-                    elif len(eq2) < limite_eq and len(eq1) < limite_eq:
-                        eq2.append(par[0]); eq1.append(par[1])
-                    else:
-                        for j in par:
-                            if len(eq1) < limite_eq: eq1.append(j)
-                            else: eq2.append(j)
-                elif len(par) == 1:
-                    if val_eq(eq1) <= val_eq(eq2) and len(eq1) < limite_eq: eq1.append(par[0])
-                    else: eq2.append(par[0])
+        # --- 4.6 NUEVO: REPARTO INTELIGENTE DE INDIVIDUALES (Táctica primero, Puntos después) ---
+        solos_ordenados = sorted(solos, key=lambda x: x["valoracion"], reverse=True)
+        for j in solos_ordenados:
+            pos = j["posicion"]
+            # Contamos cuántos jugadores de ESA posición tiene cada equipo AHORA MISMO
+            c1 = sum(1 for x in eq1 if x["posicion"] == pos)
+            c2 = sum(1 for x in eq2 if x["posicion"] == pos)
+            
+            # Prioridad 1: Balance Táctico (Si un equipo tiene menos de esta posición, se lo damos)
+            if c1 < c2 and len(eq1) < limite_eq:
+                eq1.append(j)
+            elif c2 < c1 and len(eq2) < limite_eq:
+                eq2.append(j)
+            # Prioridad 2: Si están empatados en posiciones, nivelamos por puntos generales
+            else:
+                if val_eq(eq1) <= val_eq(eq2) and len(eq1) < limite_eq:
+                    eq1.append(j)
+                elif len(eq2) < limite_eq:
+                    eq2.append(j)
+                else:
+                    eq1.append(j) # Resguardo de seguridad
 
-        # Post-Optimización
+        # --- 4.7 POST-OPTIMIZACIÓN FINA ---
         nombres_amigos = set(j["nombre"] for g in g_amigos for j in g)
         mejoro = True
         while mejoro:
@@ -260,6 +258,7 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
             diff = abs(val_eq(eq1) - val_eq(eq2))
             for j1 in [x for x in eq1 if x["nombre"] not in nombres_amigos and x["posicion"] != "ARQ"]:
                 for j2 in [x for x in eq2 if x["nombre"] not in nombres_amigos and x["posicion"] != "ARQ"]:
+                    # Intercambiamos solo si juegan exactamente de lo mismo, así no rompemos la táctica
                     if j1["posicion"] == j2["posicion"]:
                         n_diff = abs((val_eq(eq1)-j1["valoracion"]+j2["valoracion"]) - (val_eq(eq2)-j2["valoracion"]+j1["valoracion"]))
                         if n_diff < diff:

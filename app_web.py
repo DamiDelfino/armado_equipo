@@ -97,13 +97,13 @@ with st.expander("➕ Nuevo Jugador (Cargar Stats)"):
         _df = at5.number_input("DEF", 1, 99, 75)
         fis = at6.number_input("FIS", 1, 99, 75)
         
-        if st.form_submit_button("Guardar en Supabase"):
+      if st.form_submit_button("Guardar en Supabase"):
             if n_n:
                 conn = conectar_db(); cur = conn.cursor()
-                cur.execute("INSERT INTO jugadores (nombre, posicion, pos_secundaria, amigo, ritmo, tiro, pase, regate, defensa, fisico) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", 
-                             (n_n, p_n, s_n, a_n, rit, tir, pas, reg, _df, fis))
+                # Le agregamos 'valoracion' a la lista y un '%s' más, y le pasamos un 75 al final
+                cur.execute("INSERT INTO jugadores (nombre, posicion, pos_secundaria, amigo, ritmo, tiro, pase, regate, defensa, fisico, valoracion) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", 
+                             (n_n, p_n, s_n, a_n, rit, tir, pas, reg, _df, fis, 75))
                 conn.commit(); cur.close(); conn.close(); st.rerun()
-
 # --- PANEL 2: MODIFICAR JUGADOR ---
 with st.expander("✏️ Editar Atributos de Jugador"):
     j_sel = st.selectbox("Elegí a quién editar:", [""] + df_db["nombre"].tolist())

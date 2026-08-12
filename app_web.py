@@ -80,7 +80,6 @@ try:
 except Exception as e:
     st.error(f"Error de base de datos: {e}"); st.stop()
 
-# --- PANEL 1: AGREGAR JUGADOR ---
 with st.expander("➕ Nuevo Jugador (Cargar Stats)"):
     with st.form("form_nuevo"):
         c1, c2, c3, c4 = st.columns(4)
@@ -100,11 +99,10 @@ with st.expander("➕ Nuevo Jugador (Cargar Stats)"):
         if st.form_submit_button("Guardar en Supabase"):
             if n_n:
                 conn = conectar_db(); cur = conn.cursor()
-                # Le agregamos 'valoracion' a la lista y un '%s' más, y le pasamos un 75 al final
                 cur.execute("INSERT INTO jugadores (nombre, posicion, pos_secundaria, amigo, ritmo, tiro, pase, regate, defensa, fisico, valoracion) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", 
                              (n_n, p_n, s_n, a_n, rit, tir, pas, reg, _df, fis, 75))
                 conn.commit(); cur.close(); conn.close(); st.rerun()
-# --- PANEL 2: MODIFICAR JUGADOR ---
+
 with st.expander("✏️ Editar Atributos de Jugador"):
     j_sel = st.selectbox("Elegí a quién editar:", [""] + df_db["nombre"].tolist())
     if j_sel:
@@ -133,20 +131,25 @@ with st.expander("✏️ Editar Atributos de Jugador"):
                 conn = conectar_db(); cur = conn.cursor()
                 cur.execute("DELETE FROM jugadores WHERE id=%s", (int(d["id"]),)); conn.commit(); cur.close(); conn.close(); st.rerun()
 
-# --- PANEL 3: TABLA DE SELECCIÓN ---
 st.subheader(f"Seleccioná {cupo_total} jugadores")
-df_edit = df_db[["nombre", "posicion", "pos_secundaria", "valoracion_real", "amigo"]].copy()
+# Extracción de atributos extra (Ritmo y Defensa) para usarlos en el algoritmo, pero se ocultan de la vista
+df_edit = df_db[["nombre", "posicion", "pos_secundaria", "valoracion_real", "amigo", "ritmo", "defensa"]].copy()
 df_edit.insert(0, "Selección", False)
 
 tab_edit = st.data_editor(
     df_edit, 
-    column_config={"Selección": st.column_config.CheckboxColumn("¿Juega?"), "valoracion_real": st.column_config.ProgressColumn("Nivel EA FC", min_value=0, max_value=99, format="%d")}, 
+    column_config={
+        "Selección": st.column_config.CheckboxColumn("¿Juega?"), 
+        "valoracion_real": st.column_config.ProgressColumn("Nivel EA FC", min_value=0, max_value=99, format="%d"),
+        "ritmo": None,   # Oculta la columna
+        "defensa": None  # Oculta la columna
+    }, 
     disabled=["nombre", "posicion", "pos_secundaria", "valoracion_real", "amigo"], hide_index=True, use_container_width=True
 )
 conv_raw = tab_edit[tab_edit["Selección"] == True]
 
 # ==========================================
-# 4. ALGORITMO TÁCTICO AVANZADO
+# 4. ALGORITMO TÁCTICO + QUÍMICA DE EQUIPO
 # ==========================================
 if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container_width=True):
     if len(conv_raw) != cupo_total:
@@ -154,7 +157,27 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
     else:
         convocados = []
         for _, row in conv_raw.iterrows():
-            convocados.append({"nombre": str(row["nombre"]), "posicion": str(row["posicion"]), "pos_secundaria": str(row["pos_secundaria"]), "valoracion": int(row["valoracion_real"]), "amigo": str(row["amigo"]) if pd.notna(row["amigo"]) else ""})
+            convocados.append({
+                "nombre": str(row["nombre"]), 
+                "posicion": str(row["posicion"]), 
+                "pos_secundaria": str(row["pos_secundaria"]), 
+                "valoracion": int(row["valoracion_real"]), 
+                "amigo": str(row["amigo"]) if pd.notna(row["amigo"]) else "",
+                "ritmo": int(row["ritmo"]),
+                "defensa": int(row["defensa"])
+            })
+
+        # Funciones Auxiliares de Química
+        def val_eq(e): return sum(x["valoracion"] for x in e)
+        def rit_eq(e): return sum(x["ritmo"] for x in e)
+        def def_eq(e): return sum(x["defensa"] for x in e)
+        
+        def calcular_costo(e1, e2):
+            """Calcula qué tan desparejo es el partido. Diferencia Global (x3) + Diferencia Ritmo + Diferencia Def."""
+            diff_val = abs(val_eq(e1) - val_eq(e2)) * 3
+            diff_rit = abs(rit_eq(e1) - rit_eq(e2))
+            diff_def = abs(def_eq(e1) - def_eq(e2))
+            return diff_val + diff_rit + diff_def
 
         # --- 4.1 EL COMODÍN (Tapar Huecos) ---
         if cupo_total == 10: minimos = {"ARQ": 2, "DEF": 0, "MED": 0, "DEL": 0}
@@ -179,8 +202,6 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
             with st.expander("🛠️ Ajustes Tácticos Automáticos", expanded=True):
                 st.info("El sistema reubicó jugadores polifuncionales:")
                 for cambio in cambios_tacticos: st.write(cambio)
-
-        def val_eq(e): return sum(x["valoracion"] for x in e)
 
         # --- 4.2 AGRUPAR AMIGOS ---
         procesados = set(); grupos = []
@@ -221,70 +242,79 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                 else: eq1.append(mejor_del)
                 solos.remove(mejor_del)
 
-        # --- 4.5 REPARTO DE AMIGOS (Respeto absoluto) ---
+        # --- 4.5 REPARTO DE AMIGOS ---
         g_amigos = sorted([g for g in grupos if len(g) > 1], key=lambda x: sum(j["valoracion"] for j in x), reverse=True)
         for g in g_amigos:
             if val_eq(eq1) <= val_eq(eq2) and len(eq1) + len(g) <= limite_eq: eq1.extend(g)
             else: eq2.extend(g)
 
-        # --- 4.6 REPARTO FLEXIBLE DE INDIVIDUALES (Armonía sin ser idénticos) ---
+        # --- 4.6 REPARTO FLEXIBLE DE INDIVIDUALES ---
         solos_ordenados = sorted(solos, key=lambda x: x["valoracion"], reverse=True)
         for j in solos_ordenados:
             pos = j["posicion"]
             c1 = sum(1 for x in eq1 if x["posicion"] == pos)
             c2 = sum(1 for x in eq2 if x["posicion"] == pos)
             
-            # Buscamos equilibrar el nivel general primero
             equipo_ideal = 1 if val_eq(eq1) <= val_eq(eq2) else 2
             
-            # Filtro de Armonía: Permite diferencia de 1 (ej. 3 a 2), pero evita diferencia de 2 (ej. 4 a 2 o 3 a 1)
             if equipo_ideal == 1:
-                if (c1 + 1) - c2 >= 2 and len(eq2) < limite_eq:
-                    eq2.append(j) # Forzamos al equipo 2 para frenar la acumulación
-                elif len(eq1) < limite_eq:
-                    eq1.append(j)
-                else:
-                    eq2.append(j)
+                if (c1 + 1) - c2 >= 2 and len(eq2) < limite_eq: eq2.append(j)
+                elif len(eq1) < limite_eq: eq1.append(j)
+                else: eq2.append(j)
             else:
-                if (c2 + 1) - c1 >= 2 and len(eq1) < limite_eq:
-                    eq1.append(j) # Forzamos al equipo 1 para frenar la acumulación
-                elif len(eq2) < limite_eq:
-                    eq2.append(j)
-                else:
-                    eq1.append(j)
+                if (c2 + 1) - c1 >= 2 and len(eq1) < limite_eq: eq1.append(j)
+                elif len(eq2) < limite_eq: eq2.append(j)
+                else: eq1.append(j)
 
-        # --- 4.7 POST-OPTIMIZACIÓN FINA ---
+        # --- 4.7 POST-OPTIMIZACIÓN POR QUÍMICA DE EQUIPO ---
         nombres_amigos = set(j["nombre"] for g in g_amigos for j in g)
         mejoro = True
         while mejoro:
             mejoro = False
-            diff = abs(val_eq(eq1) - val_eq(eq2))
+            costo_actual = calcular_costo(eq1, eq2)
+            
             for j1 in [x for x in eq1 if x["nombre"] not in nombres_amigos and x["posicion"] != "ARQ"]:
                 for j2 in [x for x in eq2 if x["nombre"] not in nombres_amigos and x["posicion"] != "ARQ"]:
                     if j1["posicion"] == j2["posicion"]:
-                        n_diff = abs((val_eq(eq1)-j1["valoracion"]+j2["valoracion"]) - (val_eq(eq2)-j2["valoracion"]+j1["valoracion"]))
-                        if n_diff < diff:
+                        # Simulamos el intercambio
+                        eq1_sim = [x for x in eq1 if x != j1] + [j2]
+                        eq2_sim = [x for x in eq2 if x != j2] + [j1]
+                        nuevo_costo = calcular_costo(eq1_sim, eq2_sim)
+                        
+                        # Si el intercambio iguala los ritmos/defensas sin arruinar los promedios globales, se ejecuta
+                        if nuevo_costo < costo_actual:
                             eq1.remove(j1); eq1.append(j2)
                             eq2.remove(j2); eq2.append(j1)
-                            diff = n_diff; mejoro = True; break
+                            costo_actual = nuevo_costo
+                            mejoro = True
+                            break
                 if mejoro: break
 
         prioridad = {"ARQ": 0, "DEF": 1, "MED": 2, "DEL": 3}
         eq1.sort(key=lambda x: prioridad.get(x["posicion"], 4))
         eq2.sort(key=lambda x: prioridad.get(x["posicion"], 4))
 
+        # Cálculos finales para la visualización de promedios
+        prom_v1 = val_eq(eq1) / len(eq1) if eq1 else 0
+        prom_r1 = rit_eq(eq1) / len(eq1) if eq1 else 0
+        prom_d1 = def_eq(eq1) / len(eq1) if eq1 else 0
+        
+        prom_v2 = val_eq(eq2) / len(eq2) if eq2 else 0
+        prom_r2 = rit_eq(eq2) / len(eq2) if eq2 else 0
+        prom_d2 = def_eq(eq2) / len(eq2) if eq2 else 0
+
         # --- MOSTRAR RESULTADOS ---
         st.divider()
         col1, col2 = st.columns(2)
         with col1:
-            st.success("🔵 EQUIPO 1")
+            st.success(f"🔵 EQ 1 (Media: {prom_v1:.0f} | Rit: {prom_r1:.0f} | Def: {prom_d1:.0f})")
             st.plotly_chart(dibujar_cancha(eq1, "Balanceado ✅", "#3498db"), use_container_width=True)
             with st.expander("Lista"):
                 for j in eq1:
                     sec = f" (Sec: {j['pos_secundaria']})" if j['pos_secundaria'] != "Ninguna" else ""
                     st.write(f"**{j['posicion']}** - {j['nombre']}{sec}")
         with col2:
-            st.warning("🟠 EQUIPO 2")
+            st.warning(f"🟠 EQ 2 (Media: {prom_v2:.0f} | Rit: {prom_r2:.0f} | Def: {prom_d2:.0f})")
             st.plotly_chart(dibujar_cancha(eq2, "Balanceado ✅", "#e67e22"), use_container_width=True)
             with st.expander("Lista"):
                 for j in eq2:

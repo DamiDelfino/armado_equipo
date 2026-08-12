@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import psycopg2
+import random # LIBRERÍA NUEVA PARA LAS SIMULACIONES
 
 # ==========================================
 # 1. GESTIÓN DE BASE DE DATOS Y LÓGICA EA FC
@@ -82,7 +83,7 @@ except Exception as e:
 
 with st.expander("➕ Nuevo Jugador (Cargar Stats)"):
     with st.form("form_nuevo"):
-        c1, c2, c3, c4, c5 = st.columns(5) # Añadimos una columna para Rol
+        c1, c2, c3, c4, c5 = st.columns(5)
         n_n = c1.text_input("Nombre")
         p_n = c2.selectbox("Posición", ["ARQ", "DEF", "MED", "DEL"])
         s_n = c3.selectbox("Secundaria", ["Ninguna", "ARQ", "DEF", "MED", "DEL"])
@@ -113,12 +114,9 @@ with st.expander("✏️ Editar Atributos de Jugador"):
             m_nom = c1.text_input("Nombre", value=d["nombre"])
             m_pos = c2.selectbox("Posición", ["ARQ", "DEF", "MED", "DEL"], index=["ARQ", "DEF", "MED", "DEL"].index(d["posicion"]))
             m_sec = c3.selectbox("Secundaria", ["Ninguna", "ARQ", "DEF", "MED", "DEL"], index=["Ninguna", "ARQ", "DEF", "MED", "DEL"].index(d["pos_secundaria"]))
-            
-            # Control por si algún jugador viejo no tiene rol cargado
             rol_actual = d["rol"] if pd.notna(d["rol"]) else "Mixto"
             idx_rol = ["Mixto", "Ofensivo", "Defensivo"].index(rol_actual) if rol_actual in ["Mixto", "Ofensivo", "Defensivo"] else 0
             m_rol = c4.selectbox("Rol", ["Mixto", "Ofensivo", "Defensivo"], index=idx_rol)
-            
             m_ami = c5.text_input("Dúo", value=str(d["amigo"]) if d["amigo"] else "")
             
             at1, at2, at3, at4, at5, at6 = st.columns(6)
@@ -156,9 +154,9 @@ tab_edit = st.data_editor(
 conv_raw = tab_edit[tab_edit["Selección"] == True]
 
 # ==========================================
-# 4. ALGORITMO TÁCTICO + QUÍMICA + ROLES
+# 4. ALGORITMO: MONTE CARLO SIMULATOR
 # ==========================================
-if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container_width=True):
+if st.button("⚖️ GENERAR EQUIPOS (10.000 Simulaciones)", type="primary", use_container_width=True):
     if len(conv_raw) != cupo_total:
         st.error(f"Faltan/Sobran jugadores. Tenés {len(conv_raw)} seleccionados, el formato requiere exactamente {cupo_total}.")
     else:
@@ -175,23 +173,32 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                 "defensa": int(row["defensa"])
             })
 
-        # Funciones de Química y Roles
+        # --- 4.1 FUNCIONES DE COSTO Y TÁCTICA ---
         def val_eq(e): return sum(x["valoracion"] for x in e)
         def rit_eq(e): return sum(x["ritmo"] for x in e)
         def def_eq(e): return sum(x["defensa"] for x in e)
         def of_eq(e): return sum(1 for x in e if x["rol"] == "Ofensivo")
         def df_eq(e): return sum(1 for x in e if x["rol"] == "Defensivo")
         
-        def calcular_costo(e1, e2):
-            """Diferencia Global (x3) + Ritmo + Def + Roles Ofensivos (x2) + Roles Defensivos (x2)"""
+        def calcular_costo_sim(e1, e2):
+            """Calcula el costo total. Incluye un CASTIGO GIGANTE si las formaciones quedan asimétricas."""
             diff_val = abs(val_eq(e1) - val_eq(e2)) * 3
             diff_rit = abs(rit_eq(e1) - rit_eq(e2))
             diff_def = abs(def_eq(e1) - def_eq(e2))
             diff_rol_of = abs(of_eq(e1) - of_eq(e2)) * 2
             diff_rol_df = abs(df_eq(e1) - df_eq(e2)) * 2
-            return diff_val + diff_rit + diff_def + diff_rol_of + diff_rol_df
+            
+            # Castigo táctico: Prohíbe que un equipo tenga 2 defensores más que el otro (garantiza armonía)
+            penalidad_tactica = 0
+            for pos in ["DEF", "MED", "DEL"]:
+                c1 = sum(1 for x in e1 if x["posicion"] == pos)
+                c2 = sum(1 for x in e2 if x["posicion"] == pos)
+                if abs(c1 - c2) >= 2:
+                    penalidad_tactica += 1000
+                    
+            return diff_val + diff_rit + diff_def + diff_rol_of + diff_rol_df + penalidad_tactica
 
-        # --- 4.1 EL COMODÍN ---
+        # --- 4.2 EL COMODÍN ---
         if cupo_total == 10: minimos = {"ARQ": 2, "DEF": 0, "MED": 0, "DEL": 0}
         else: minimos = {"ARQ": 2, "DEF": 4, "MED": 4, "DEL": 2}
 
@@ -215,7 +222,7 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                 st.info("El sistema reubicó jugadores polifuncionales:")
                 for cambio in cambios_tacticos: st.write(cambio)
 
-        # --- 4.2 AGRUPAR AMIGOS ---
+        # --- 4.3 AGRUPAR DÚOS/AMIGOS ---
         procesados = set(); grupos = []
         for j in convocados:
             if j["nombre"] in procesados: continue
@@ -229,7 +236,7 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
 
         eq1, eq2 = [], []
         
-        # --- 4.3 REPARTO DE ARQUEROS ---
+        # --- 4.4 ASIGNACIONES FIJAS (Arqueros y F5) ---
         arqs_g = [g for g in grupos if any(x["posicion"] == "ARQ" for x in g)]
         arqs_g = sorted(arqs_g, key=lambda g: max(x["valoracion"] for x in g if x["posicion"]=="ARQ"), reverse=True)
         if len(arqs_g) >= 2:
@@ -242,7 +249,6 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                 m_def = max(libres, key=lambda g: max((x["valoracion"] for x in g if x["posicion"]=="DEF"), default=-1))
                 eq2.extend(m_def); grupos.remove(m_def)
 
-        # --- 4.4 REGLA FÚTBOL 5 ---
         solos = [g[0] for g in grupos if len(g) == 1 and g[0] not in eq1 and g[0] not in eq2]
         if cupo_total == 10:
             max_arq_1 = max([x["valoracion"] for x in eq1 if x["posicion"] == "ARQ"], default=-1)
@@ -252,58 +258,60 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                 mejor_del = dels_solos[0]
                 if max_arq_1 > max_arq_2: eq2.append(mejor_del)
                 else: eq1.append(mejor_del)
-                solos.remove(mejor_del)
+                # Actualizamos los grupos eliminando al delantero fijo
+                grupos = [g for g in grupos if g[0] != mejor_del]
 
-        # --- 4.5 REPARTO DE AMIGOS ---
-        g_amigos = sorted([g for g in grupos if len(g) > 1], key=lambda x: sum(j["valoracion"] for j in x), reverse=True)
-        for g in g_amigos:
-            if val_eq(eq1) <= val_eq(eq2) and len(eq1) + len(g) <= limite_eq: eq1.extend(g)
-            else: eq2.extend(g)
-
-        # --- 4.6 REPARTO FLEXIBLE ---
-        solos_ordenados = sorted(solos, key=lambda x: x["valoracion"], reverse=True)
-        for j in solos_ordenados:
-            pos = j["posicion"]
-            c1 = sum(1 for x in eq1 if x["posicion"] == pos)
-            c2 = sum(1 for x in eq2 if x["posicion"] == pos)
+        # --- 4.5 MOTOR MONTE CARLO (10.000 Escenarios) ---
+        grupos_restantes = [g for g in grupos if g not in arqs_g and not any(j in eq1 or j in eq2 for j in g)]
+        
+        mejor_eq1, mejor_eq2 = [], []
+        min_costo = float('inf')
+        
+        # Ejecutamos 10.000 iteraciones instantáneas
+        for _ in range(10000):
+            eq1_temp = list(eq1) # Restauramos la base (Arqueros)
+            eq2_temp = list(eq2)
             
-            equipo_ideal = 1 if val_eq(eq1) <= val_eq(eq2) else 2
+            # Mezclamos los jugadores/dúos restantes
+            grupos_sim = list(grupos_restantes)
+            random.shuffle(grupos_sim)
             
-            if equipo_ideal == 1:
-                if (c1 + 1) - c2 >= 2 and len(eq2) < limite_eq: eq2.append(j)
-                elif len(eq1) < limite_eq: eq1.append(j)
-                else: eq2.append(j)
-            else:
-                if (c2 + 1) - c1 >= 2 and len(eq1) < limite_eq: eq1.append(j)
-                elif len(eq2) < limite_eq: eq2.append(j)
-                else: eq1.append(j)
+            valido = True
+            for g in grupos_sim:
+                entra_en_1 = len(eq1_temp) + len(g) <= limite_eq
+                entra_en_2 = len(eq2_temp) + len(g) <= limite_eq
+                
+                # Asignación aleatoria si entra en los dos
+                if entra_en_1 and entra_en_2:
+                    if random.choice([True, False]): eq1_temp.extend(g)
+                    else: eq2_temp.extend(g)
+                elif entra_en_1:
+                    eq1_temp.extend(g)
+                elif entra_en_2:
+                    eq2_temp.extend(g)
+                else:
+                    valido = False # Simulación abortada (no dan los cupos)
+                    break
+                    
+            # Si logró acomodar a todos exactamente
+            if valido and len(eq1_temp) == limite_eq and len(eq2_temp) == limite_eq:
+                costo_actual = calcular_costo_sim(eq1_temp, eq2_temp)
+                # Si esta formación es la mejor hasta ahora, la guardamos
+                if costo_actual < min_costo:
+                    min_costo = costo_actual
+                    mejor_eq1 = list(eq1_temp)
+                    mejor_eq2 = list(eq2_temp)
+                    
+        # Aplicamos la combinación ganadora
+        if mejor_eq1 and mejor_eq2:
+            eq1, eq2 = mejor_eq1, mejor_eq2
 
-        # --- 4.7 POST-OPTIMIZACIÓN FINA (Ahora incluye roles) ---
-        nombres_amigos = set(j["nombre"] for g in g_amigos for j in g)
-        mejoro = True
-        while mejoro:
-            mejoro = False
-            costo_actual = calcular_costo(eq1, eq2)
-            
-            for j1 in [x for x in eq1 if x["nombre"] not in nombres_amigos and x["posicion"] != "ARQ"]:
-                for j2 in [x for x in eq2 if x["nombre"] not in nombres_amigos and x["posicion"] != "ARQ"]:
-                    if j1["posicion"] == j2["posicion"]:
-                        eq1_sim = [x for x in eq1 if x != j1] + [j2]
-                        eq2_sim = [x for x in eq2 if x != j2] + [j1]
-                        nuevo_costo = calcular_costo(eq1_sim, eq2_sim)
-                        
-                        if nuevo_costo < costo_actual:
-                            eq1.remove(j1); eq1.append(j2)
-                            eq2.remove(j2); eq2.append(j1)
-                            costo_actual = nuevo_costo
-                            mejoro = True
-                            break
-                if mejoro: break
-
+        # Orden final visual por líneas
         prioridad = {"ARQ": 0, "DEF": 1, "MED": 2, "DEL": 3}
         eq1.sort(key=lambda x: prioridad.get(x["posicion"], 4))
         eq2.sort(key=lambda x: prioridad.get(x["posicion"], 4))
 
+        # Cálculos de promedios para la interfaz
         prom_v1 = val_eq(eq1) / len(eq1) if eq1 else 0
         prom_r1 = rit_eq(eq1) / len(eq1) if eq1 else 0
         prom_d1 = def_eq(eq1) / len(eq1) if eq1 else 0
@@ -317,15 +325,15 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
         col1, col2 = st.columns(2)
         with col1:
             st.success(f"🔵 EQ 1 (Media: {prom_v1:.0f} | Rit: {prom_r1:.0f} | Def: {prom_d1:.0f})")
-            st.plotly_chart(dibujar_cancha(eq1, "Balanceado ✅", "#3498db"), use_container_width=True)
+            st.plotly_chart(dibujar_cancha(eq1, "Generación Optimizada ✅", "#3498db"), use_container_width=True)
             with st.expander("Lista Detallada"):
                 for j in eq1:
                     sec = f" (Sec: {j['pos_secundaria']})" if j['pos_secundaria'] != "Ninguna" else ""
-                    rol_txt = f" [{j['rol'][:3]}]" if j['rol'] != "Mixto" else "" # Mostrará [Ofe] o [Def]
+                    rol_txt = f" [{j['rol'][:3]}]" if j['rol'] != "Mixto" else ""
                     st.write(f"**{j['posicion']}** - {j['nombre']} {rol_txt}{sec}")
         with col2:
             st.warning(f"🟠 EQ 2 (Media: {prom_v2:.0f} | Rit: {prom_r2:.0f} | Def: {prom_d2:.0f})")
-            st.plotly_chart(dibujar_cancha(eq2, "Balanceado ✅", "#e67e22"), use_container_width=True)
+            st.plotly_chart(dibujar_cancha(eq2, "Generación Optimizada ✅", "#e67e22"), use_container_width=True)
             with st.expander("Lista Detallada"):
                 for j in eq2:
                     sec = f" (Sec: {j['pos_secundaria']})" if j['pos_secundaria'] != "Ninguna" else ""

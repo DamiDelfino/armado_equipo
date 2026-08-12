@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import psycopg2
-import random # LIBRERÍA NUEVA PARA LAS SIMULACIONES
+import random
 
 # ==========================================
 # 1. GESTIÓN DE BASE DE DATOS Y LÓGICA EA FC
@@ -188,7 +188,6 @@ if st.button("⚖️ GENERAR EQUIPOS (10.000 Simulaciones)", type="primary", use
             diff_rol_of = abs(of_eq(e1) - of_eq(e2)) * 2
             diff_rol_df = abs(df_eq(e1) - df_eq(e2)) * 2
             
-            # Castigo táctico: Prohíbe que un equipo tenga 2 defensores más que el otro (garantiza armonía)
             penalidad_tactica = 0
             for pos in ["DEF", "MED", "DEL"]:
                 c1 = sum(1 for x in e1 if x["posicion"] == pos)
@@ -222,17 +221,37 @@ if st.button("⚖️ GENERAR EQUIPOS (10.000 Simulaciones)", type="primary", use
                 st.info("El sistema reubicó jugadores polifuncionales:")
                 for cambio in cambios_tacticos: st.write(cambio)
 
-        # --- 4.3 AGRUPAR DÚOS/AMIGOS ---
-        procesados = set(); grupos = []
+        # --- 4.3 AGRUPAR REDES DE AMIGOS (Soporta Tríos, Cuartetos, etc.) ---
+        # Creamos un mapa de conexiones bidireccionales
+        conexiones = {j["nombre"]: [] for j in convocados}
         for j in convocados:
-            if j["nombre"] in procesados: continue
-            g = [j]; procesados.add(j["nombre"])
-            if j["amigo"]:
-                amigo = next((x for x in convocados if x["nombre"] == j["amigo"] and x["nombre"] not in procesados), None)
-                if amigo: g.append(amigo); procesados.add(amigo["nombre"])
-            inv = next((x for x in convocados if x["amigo"] == j["nombre"] and x["nombre"] not in procesados), None)
-            if inv: g.append(inv); procesados.add(inv["nombre"])
-            grupos.append(g)
+            amigo = j["amigo"]
+            if amigo and amigo in conexiones: 
+                conexiones[j["nombre"]].append(amigo)
+                conexiones[amigo].append(j["nombre"])
+                
+        procesados = set()
+        grupos = []
+        
+        # Recorremos la red para armar los bloques sólidos
+        for j in convocados:
+            nombre = j["nombre"]
+            if nombre not in procesados:
+                grupo_actual = []
+                cola = [nombre]
+                procesados.add(nombre)
+                
+                while cola:
+                    actual = cola.pop(0)
+                    jugador_obj = next((x for x in convocados if x["nombre"] == actual), None)
+                    if jugador_obj:
+                        grupo_actual.append(jugador_obj)
+                        
+                    for vecino in conexiones[actual]:
+                        if vecino not in procesados:
+                            procesados.add(vecino)
+                            cola.append(vecino)
+                grupos.append(grupo_actual)
 
         eq1, eq2 = [], []
         
@@ -258,7 +277,6 @@ if st.button("⚖️ GENERAR EQUIPOS (10.000 Simulaciones)", type="primary", use
                 mejor_del = dels_solos[0]
                 if max_arq_1 > max_arq_2: eq2.append(mejor_del)
                 else: eq1.append(mejor_del)
-                # Actualizamos los grupos eliminando al delantero fijo
                 grupos = [g for g in grupos if g[0] != mejor_del]
 
         # --- 4.5 MOTOR MONTE CARLO (10.000 Escenarios) ---
@@ -267,12 +285,10 @@ if st.button("⚖️ GENERAR EQUIPOS (10.000 Simulaciones)", type="primary", use
         mejor_eq1, mejor_eq2 = [], []
         min_costo = float('inf')
         
-        # Ejecutamos 10.000 iteraciones instantáneas
         for _ in range(10000):
-            eq1_temp = list(eq1) # Restauramos la base (Arqueros)
+            eq1_temp = list(eq1) 
             eq2_temp = list(eq2)
             
-            # Mezclamos los jugadores/dúos restantes
             grupos_sim = list(grupos_restantes)
             random.shuffle(grupos_sim)
             
@@ -281,7 +297,6 @@ if st.button("⚖️ GENERAR EQUIPOS (10.000 Simulaciones)", type="primary", use
                 entra_en_1 = len(eq1_temp) + len(g) <= limite_eq
                 entra_en_2 = len(eq2_temp) + len(g) <= limite_eq
                 
-                # Asignación aleatoria si entra en los dos
                 if entra_en_1 and entra_en_2:
                     if random.choice([True, False]): eq1_temp.extend(g)
                     else: eq2_temp.extend(g)
@@ -290,28 +305,23 @@ if st.button("⚖️ GENERAR EQUIPOS (10.000 Simulaciones)", type="primary", use
                 elif entra_en_2:
                     eq2_temp.extend(g)
                 else:
-                    valido = False # Simulación abortada (no dan los cupos)
+                    valido = False 
                     break
                     
-            # Si logró acomodar a todos exactamente
             if valido and len(eq1_temp) == limite_eq and len(eq2_temp) == limite_eq:
                 costo_actual = calcular_costo_sim(eq1_temp, eq2_temp)
-                # Si esta formación es la mejor hasta ahora, la guardamos
                 if costo_actual < min_costo:
                     min_costo = costo_actual
                     mejor_eq1 = list(eq1_temp)
                     mejor_eq2 = list(eq2_temp)
                     
-        # Aplicamos la combinación ganadora
         if mejor_eq1 and mejor_eq2:
             eq1, eq2 = mejor_eq1, mejor_eq2
 
-        # Orden final visual por líneas
         prioridad = {"ARQ": 0, "DEF": 1, "MED": 2, "DEL": 3}
         eq1.sort(key=lambda x: prioridad.get(x["posicion"], 4))
         eq2.sort(key=lambda x: prioridad.get(x["posicion"], 4))
 
-        # Cálculos de promedios para la interfaz
         prom_v1 = val_eq(eq1) / len(eq1) if eq1 else 0
         prom_r1 = rit_eq(eq1) / len(eq1) if eq1 else 0
         prom_d1 = def_eq(eq1) / len(eq1) if eq1 else 0

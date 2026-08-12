@@ -58,7 +58,7 @@ def dibujar_cancha(equipo, titulo, color_puntos):
 # ==========================================
 # 3. INTERFAZ WEB
 # ==========================================
-st.set_page_config(page_title="Fútbol Pro", page_icon="⚽", layout="wide")
+st.set_page_config(page_title="Fútbol Piraña", page_icon="⚽", layout="wide")
 st.title("⚽ Armador de Equipos Piraña")
 
 formato_partido = st.selectbox(
@@ -82,11 +82,12 @@ except Exception as e:
 
 with st.expander("➕ Nuevo Jugador (Cargar Stats)"):
     with st.form("form_nuevo"):
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5) # Añadimos una columna para Rol
         n_n = c1.text_input("Nombre")
         p_n = c2.selectbox("Posición", ["ARQ", "DEF", "MED", "DEL"])
         s_n = c3.selectbox("Secundaria", ["Ninguna", "ARQ", "DEF", "MED", "DEL"])
-        a_n = c4.text_input("Dúo")
+        r_n = c4.selectbox("Rol", ["Mixto", "Ofensivo", "Defensivo"])
+        a_n = c5.text_input("Dúo")
         
         at1, at2, at3, at4, at5, at6 = st.columns(6)
         rit = at1.number_input("RIT", 1, 99, 75)
@@ -99,8 +100,8 @@ with st.expander("➕ Nuevo Jugador (Cargar Stats)"):
         if st.form_submit_button("Guardar en Supabase"):
             if n_n:
                 conn = conectar_db(); cur = conn.cursor()
-                cur.execute("INSERT INTO jugadores (nombre, posicion, pos_secundaria, amigo, ritmo, tiro, pase, regate, defensa, fisico, valoracion) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", 
-                             (n_n, p_n, s_n, a_n, rit, tir, pas, reg, _df, fis, 75))
+                cur.execute("INSERT INTO jugadores (nombre, posicion, pos_secundaria, amigo, ritmo, tiro, pase, regate, defensa, fisico, valoracion, rol) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", 
+                             (n_n, p_n, s_n, a_n, rit, tir, pas, reg, _df, fis, 75, r_n))
                 conn.commit(); cur.close(); conn.close(); st.rerun()
 
 with st.expander("✏️ Editar Atributos de Jugador"):
@@ -108,11 +109,17 @@ with st.expander("✏️ Editar Atributos de Jugador"):
     if j_sel:
         d = df_db[df_db["nombre"] == j_sel].iloc[0]
         with st.form("form_edit"):
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3, c4, c5 = st.columns(5)
             m_nom = c1.text_input("Nombre", value=d["nombre"])
             m_pos = c2.selectbox("Posición", ["ARQ", "DEF", "MED", "DEL"], index=["ARQ", "DEF", "MED", "DEL"].index(d["posicion"]))
             m_sec = c3.selectbox("Secundaria", ["Ninguna", "ARQ", "DEF", "MED", "DEL"], index=["Ninguna", "ARQ", "DEF", "MED", "DEL"].index(d["pos_secundaria"]))
-            m_ami = c4.text_input("Dúo", value=str(d["amigo"]) if d["amigo"] else "")
+            
+            # Control por si algún jugador viejo no tiene rol cargado
+            rol_actual = d["rol"] if pd.notna(d["rol"]) else "Mixto"
+            idx_rol = ["Mixto", "Ofensivo", "Defensivo"].index(rol_actual) if rol_actual in ["Mixto", "Ofensivo", "Defensivo"] else 0
+            m_rol = c4.selectbox("Rol", ["Mixto", "Ofensivo", "Defensivo"], index=idx_rol)
+            
+            m_ami = c5.text_input("Dúo", value=str(d["amigo"]) if d["amigo"] else "")
             
             at1, at2, at3, at4, at5, at6 = st.columns(6)
             m_rit = at1.number_input("RIT", 1, 99, int(d["ritmo"]))
@@ -125,15 +132,15 @@ with st.expander("✏️ Editar Atributos de Jugador"):
             col_b1, col_b2 = st.columns(2)
             if col_b1.form_submit_button("💾 Actualizar"):
                 conn = conectar_db(); cur = conn.cursor()
-                cur.execute("UPDATE jugadores SET nombre=%s, posicion=%s, pos_secundaria=%s, amigo=%s, ritmo=%s, tiro=%s, pase=%s, regate=%s, defensa=%s, fisico=%s WHERE id=%s", (m_nom, m_pos, m_sec, m_ami, m_rit, m_tir, m_pas, m_reg, m_df, m_fis, int(d["id"])))
+                cur.execute("UPDATE jugadores SET nombre=%s, posicion=%s, pos_secundaria=%s, amigo=%s, ritmo=%s, tiro=%s, pase=%s, regate=%s, defensa=%s, fisico=%s, rol=%s WHERE id=%s", 
+                            (m_nom, m_pos, m_sec, m_ami, m_rit, m_tir, m_pas, m_reg, m_df, m_fis, m_rol, int(d["id"])))
                 conn.commit(); cur.close(); conn.close(); st.rerun()
             if col_b2.form_submit_button("🗑️ Eliminar"):
                 conn = conectar_db(); cur = conn.cursor()
                 cur.execute("DELETE FROM jugadores WHERE id=%s", (int(d["id"]),)); conn.commit(); cur.close(); conn.close(); st.rerun()
 
 st.subheader(f"Seleccioná {cupo_total} jugadores")
-# Extracción de atributos extra (Ritmo y Defensa) para usarlos en el algoritmo, pero se ocultan de la vista
-df_edit = df_db[["nombre", "posicion", "pos_secundaria", "valoracion_real", "amigo", "ritmo", "defensa"]].copy()
+df_edit = df_db[["nombre", "posicion", "pos_secundaria", "rol", "valoracion_real", "amigo", "ritmo", "defensa"]].copy()
 df_edit.insert(0, "Selección", False)
 
 tab_edit = st.data_editor(
@@ -141,15 +148,15 @@ tab_edit = st.data_editor(
     column_config={
         "Selección": st.column_config.CheckboxColumn("¿Juega?"), 
         "valoracion_real": st.column_config.ProgressColumn("Nivel EA FC", min_value=0, max_value=99, format="%d"),
-        "ritmo": None,   # Oculta la columna
-        "defensa": None  # Oculta la columna
+        "ritmo": None,   
+        "defensa": None  
     }, 
-    disabled=["nombre", "posicion", "pos_secundaria", "valoracion_real", "amigo"], hide_index=True, use_container_width=True
+    disabled=["nombre", "posicion", "pos_secundaria", "rol", "valoracion_real", "amigo"], hide_index=True, use_container_width=True
 )
 conv_raw = tab_edit[tab_edit["Selección"] == True]
 
 # ==========================================
-# 4. ALGORITMO TÁCTICO + QUÍMICA DE EQUIPO
+# 4. ALGORITMO TÁCTICO + QUÍMICA + ROLES
 # ==========================================
 if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container_width=True):
     if len(conv_raw) != cupo_total:
@@ -161,25 +168,30 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                 "nombre": str(row["nombre"]), 
                 "posicion": str(row["posicion"]), 
                 "pos_secundaria": str(row["pos_secundaria"]), 
+                "rol": str(row["rol"]) if pd.notna(row["rol"]) else "Mixto",
                 "valoracion": int(row["valoracion_real"]), 
                 "amigo": str(row["amigo"]) if pd.notna(row["amigo"]) else "",
                 "ritmo": int(row["ritmo"]),
                 "defensa": int(row["defensa"])
             })
 
-        # Funciones Auxiliares de Química
+        # Funciones de Química y Roles
         def val_eq(e): return sum(x["valoracion"] for x in e)
         def rit_eq(e): return sum(x["ritmo"] for x in e)
         def def_eq(e): return sum(x["defensa"] for x in e)
+        def of_eq(e): return sum(1 for x in e if x["rol"] == "Ofensivo")
+        def df_eq(e): return sum(1 for x in e if x["rol"] == "Defensivo")
         
         def calcular_costo(e1, e2):
-            """Calcula qué tan desparejo es el partido. Diferencia Global (x3) + Diferencia Ritmo + Diferencia Def."""
+            """Diferencia Global (x3) + Ritmo + Def + Roles Ofensivos (x2) + Roles Defensivos (x2)"""
             diff_val = abs(val_eq(e1) - val_eq(e2)) * 3
             diff_rit = abs(rit_eq(e1) - rit_eq(e2))
             diff_def = abs(def_eq(e1) - def_eq(e2))
-            return diff_val + diff_rit + diff_def
+            diff_rol_of = abs(of_eq(e1) - of_eq(e2)) * 2
+            diff_rol_df = abs(df_eq(e1) - df_eq(e2)) * 2
+            return diff_val + diff_rit + diff_def + diff_rol_of + diff_rol_df
 
-        # --- 4.1 EL COMODÍN (Tapar Huecos) ---
+        # --- 4.1 EL COMODÍN ---
         if cupo_total == 10: minimos = {"ARQ": 2, "DEF": 0, "MED": 0, "DEL": 0}
         else: minimos = {"ARQ": 2, "DEF": 4, "MED": 4, "DEL": 2}
 
@@ -248,7 +260,7 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
             if val_eq(eq1) <= val_eq(eq2) and len(eq1) + len(g) <= limite_eq: eq1.extend(g)
             else: eq2.extend(g)
 
-        # --- 4.6 REPARTO FLEXIBLE DE INDIVIDUALES ---
+        # --- 4.6 REPARTO FLEXIBLE ---
         solos_ordenados = sorted(solos, key=lambda x: x["valoracion"], reverse=True)
         for j in solos_ordenados:
             pos = j["posicion"]
@@ -266,7 +278,7 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
                 elif len(eq2) < limite_eq: eq2.append(j)
                 else: eq1.append(j)
 
-        # --- 4.7 POST-OPTIMIZACIÓN POR QUÍMICA DE EQUIPO ---
+        # --- 4.7 POST-OPTIMIZACIÓN FINA (Ahora incluye roles) ---
         nombres_amigos = set(j["nombre"] for g in g_amigos for j in g)
         mejoro = True
         while mejoro:
@@ -276,12 +288,10 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
             for j1 in [x for x in eq1 if x["nombre"] not in nombres_amigos and x["posicion"] != "ARQ"]:
                 for j2 in [x for x in eq2 if x["nombre"] not in nombres_amigos and x["posicion"] != "ARQ"]:
                     if j1["posicion"] == j2["posicion"]:
-                        # Simulamos el intercambio
                         eq1_sim = [x for x in eq1 if x != j1] + [j2]
                         eq2_sim = [x for x in eq2 if x != j2] + [j1]
                         nuevo_costo = calcular_costo(eq1_sim, eq2_sim)
                         
-                        # Si el intercambio iguala los ritmos/defensas sin arruinar los promedios globales, se ejecuta
                         if nuevo_costo < costo_actual:
                             eq1.remove(j1); eq1.append(j2)
                             eq2.remove(j2); eq2.append(j1)
@@ -294,7 +304,6 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
         eq1.sort(key=lambda x: prioridad.get(x["posicion"], 4))
         eq2.sort(key=lambda x: prioridad.get(x["posicion"], 4))
 
-        # Cálculos finales para la visualización de promedios
         prom_v1 = val_eq(eq1) / len(eq1) if eq1 else 0
         prom_r1 = rit_eq(eq1) / len(eq1) if eq1 else 0
         prom_d1 = def_eq(eq1) / len(eq1) if eq1 else 0
@@ -309,14 +318,16 @@ if st.button("⚖️ GENERAR EQUIPOS BALANCEADOS", type="primary", use_container
         with col1:
             st.success(f"🔵 EQ 1 (Media: {prom_v1:.0f} | Rit: {prom_r1:.0f} | Def: {prom_d1:.0f})")
             st.plotly_chart(dibujar_cancha(eq1, "Balanceado ✅", "#3498db"), use_container_width=True)
-            with st.expander("Lista"):
+            with st.expander("Lista Detallada"):
                 for j in eq1:
                     sec = f" (Sec: {j['pos_secundaria']})" if j['pos_secundaria'] != "Ninguna" else ""
-                    st.write(f"**{j['posicion']}** - {j['nombre']}{sec}")
+                    rol_txt = f" [{j['rol'][:3]}]" if j['rol'] != "Mixto" else "" # Mostrará [Ofe] o [Def]
+                    st.write(f"**{j['posicion']}** - {j['nombre']} {rol_txt}{sec}")
         with col2:
             st.warning(f"🟠 EQ 2 (Media: {prom_v2:.0f} | Rit: {prom_r2:.0f} | Def: {prom_d2:.0f})")
             st.plotly_chart(dibujar_cancha(eq2, "Balanceado ✅", "#e67e22"), use_container_width=True)
-            with st.expander("Lista"):
+            with st.expander("Lista Detallada"):
                 for j in eq2:
                     sec = f" (Sec: {j['pos_secundaria']})" if j['pos_secundaria'] != "Ninguna" else ""
-                    st.write(f"**{j['posicion']}** - {j['nombre']}{sec}")
+                    rol_txt = f" [{j['rol'][:3]}]" if j['rol'] != "Mixto" else ""
+                    st.write(f"**{j['posicion']}** - {j['nombre']} {rol_txt}{sec}")
